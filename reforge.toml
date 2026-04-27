@@ -1,0 +1,41 @@
+# Reforge MCP Configuration
+# Controls scanning behavior, fix policies, and monorepo handling.
+
+[scan]
+# Directories to skip during repository scanning - these are typically generated,
+# third-party, or runtime artifacts that should never be analyzed or modified.
+ignore = ["node_modules", ".git", "dist", "venv", "__pycache__"]
+
+# Maximum file size in kilobytes to include in analysis - prevents scanning
+# minified bundles, large data files, or other outliers that would skew results.
+max_file_size_kb = 500
+
+# File extensions to exclude from scanning - typically lock files, binaries,
+# and source maps that are either not human-readable or auto-generated.
+skip_extensions = [".min.js", ".lock", ".bin", ".map"]
+
+[fix]
+# Whether to run the project's test suite before applying any fixes - ensures
+# the baseline is green so we can detect if our changes introduce regressions.
+test_before_fix = true
+
+# Whether to create one commit per logical fix rather than batching all changes -
+# makes review easier and allows selective rollback of problematic fixes.
+atomic_commits = true
+
+# Whether to show proposed changes without applying them - safe default that
+# requires explicit opt-in before any modifications are made to the repository.
+dry_run = true
+
+# Number of fixes to batch before requiring user confirmation - prevents runaway
+# automation while still allowing productive bulk operations with oversight.
+confirm_every = 5
+
+# Maximum number of fixes to apply in a single session - protects against
+# excessive token usage and gives natural checkpoints for review.
+session_budget = 20
+
+[monorepo]
+# Whether to automatically detect multiple projects within a single repository -
+# when enabled, will identify separate packages/apps and scope fixes accordingly.
+auto_detect = true
