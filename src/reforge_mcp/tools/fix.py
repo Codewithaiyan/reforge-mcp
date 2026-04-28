@@ -8,6 +8,10 @@ fix naming inconsistencies, and run tests to verify changes are safe.
 
 from typing import Any
 
+import os
+
+from ..utils.security import SecurityError, validate_path
+
 
 def write_fix(
     file_path: str,
@@ -48,6 +52,11 @@ def write_fix(
     - description provides audit trail for what changed and why
     - run_tests ensures changes don't break existing functionality
     """
+    # SECURITY: Validate file_path is within current working directory
+    # This prevents modifying files outside the project (e.g., /etc/passwd)
+    cwd = os.getcwd()
+    validate_path(file_path, cwd)
+
     # TODO: Implement fix logic using scanner/ dead_code and duplicates modules
     return {
         "success": True,

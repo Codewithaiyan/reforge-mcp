@@ -8,6 +8,8 @@ handle merge conflicts, and provide rollback capabilities for unsafe changes.
 
 from typing import Any
 
+from ..utils.security import SecurityError, validate_path
+
 
 def git_commit(
     repo_path: str,
@@ -45,6 +47,17 @@ def git_commit(
     - branch allows operating on feature branches without manual checkout
     - create_branch supports the common workflow of creating a branch for changes
     """
+    # SECURITY: Validate repo_path is a valid directory path
+    # We validate against itself since we're operating on that repository
+    validate_path(repo_path, repo_path)
+
+    # Also validate each file path if provided
+    if files:
+        for file_path in files:
+            # File paths are relative to repo_path, so we resolve them first
+            full_path = f"{repo_path}/{file_path}" if not file_path.startswith("/") else file_path
+            validate_path(full_path, repo_path)
+
     # TODO: Implement git operations using GitPython library
     return {
         "success": True,

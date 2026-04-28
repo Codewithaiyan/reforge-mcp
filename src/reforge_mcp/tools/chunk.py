@@ -8,6 +8,8 @@ and class boundaries, enabling targeted fixes without full-file rewrites.
 
 from typing import Any
 
+from ..utils.security import SecurityError, validate_path
+
 
 def get_chunk(
     file_path: str,
@@ -41,6 +43,12 @@ def get_chunk(
     - strategy lets users choose between AST-aware or simple splitting
     - max_tokens ensures chunks fit within LLM context windows
     """
+    # SECURITY: Validate file_path is within current working directory
+    # We use cwd as the repo_root since chunking operates on individual files
+    import os
+    cwd = os.getcwd()
+    validate_path(file_path, cwd)
+
     # TODO: Implement chunking logic using tree-sitter AST parsing
     return {
         "chunk_id": f"{file_path}:1-50",

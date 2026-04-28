@@ -8,6 +8,8 @@ identify test coverage gaps, and produce a structured report of findings.
 
 from typing import Any
 
+from ..utils.security import SecurityError, validate_path
+
 
 def scan_repo(
     root_path: str,
@@ -40,6 +42,11 @@ def scan_repo(
     - include_tests allows skipping test analysis for speed
     - max_depth prevents path traversal attacks and infinite loops
     """
+    # SECURITY: Validate root_path is within a safe boundary
+    # For scan_repo, we validate the path exists and is absolute
+    # The repo_root for validation is the path itself (we're scanning that repo)
+    validate_path(root_path, root_path)
+
     # TODO: Implement full scan logic using scanner/ module
     return {
         "project_type": "python-fastapi",
