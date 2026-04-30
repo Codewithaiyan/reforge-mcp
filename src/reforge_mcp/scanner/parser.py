@@ -315,18 +315,6 @@ class PythonAdapter:
                 if func_info:
                     functions.append(func_info)
 
-                    functions.append(
-                        FunctionInfo(
-                            name=name,
-                            file=file_path,
-                            start_line=start_line,
-                            end_line=end_line,
-                            body_hash=body_hash,
-                            language="python",
-                            decorators=tuple(decorators),
-                        )
-                    )
-
         # Extract classes
         for match in class_query.captures(root):
             node, capture_name = match
