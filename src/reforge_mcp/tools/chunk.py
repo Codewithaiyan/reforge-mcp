@@ -1,60 +1,99 @@
 """
 Code Chunking Tool.
 
-MCP tool that breaks large files into semantically meaningful chunks.
-When fully built, will use tree-sitter AST parsing to respect function
-and class boundaries, enabling targeted fixes without full-file rewrites.
+MCP tool that retrieves a line-range slice from a file.
 """
 
+import os
+from pathlib import Path
 from typing import Any
 
-from ..utils.security import SecurityError, validate_path
+from ..utils.security import SecurityError, should_skip_file, validate_path
+
+_LANGUAGE_MAP: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".jsx": "javascript",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".h": "c",
+    ".hpp": "cpp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".zsh": "bash",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".json": "json",
+    ".toml": "toml",
+    ".md": "markdown",
+    ".html": "html",
+    ".css": "css",
+    ".sql": "sql",
+}
+
+
+def _detect_language(path: Path) -> str:
+    return _LANGUAGE_MAP.get(path.suffix.lower(), "text")
 
 
 def get_chunk(
     file_path: str,
-    chunk_id: str | None = None,
-    strategy: str = "semantic",
-    max_tokens: int = 2000,
+    repo_root: str | None = None,
+    start_line: int = 1,
+    end_line: int | None = None,
 ) -> dict[str, Any]:
     """
-    Retrieve a specific chunk from a file or generate chunks on demand.
+    Retrieve a line-range slice from a file.
 
-    Parameter contract:
-    - file_path: Absolute path to the file to chunk.
-    - chunk_id: Optional identifier for a specific chunk. If None, returns all chunks.
-                Format: "<file_path>:<line_start>-<line_end>" or a semantic label.
-    - strategy: Chunking strategy — "semantic" (AST-based), "line" (fixed lines),
-                or "token" (fixed token count). Default: "semantic".
-    - max_tokens: Maximum tokens per chunk. Adjusts chunk boundaries to fit.
+    Args:
+        file_path: Path to the file (absolute or relative to repo_root).
+        repo_root: Repository root for path validation. Defaults to cwd.
+        start_line: First line to return, 1-indexed. Clamped to [1, total].
+        end_line: Last line to return, inclusive. Defaults to end of file.
 
     Returns:
-        A chunk or list of chunks containing:
-        - chunk_id: Unique identifier for this chunk
-        - content: The actual code content
-        - start_line: Starting line number (1-indexed)
-        - end_line: Ending line number (inclusive)
-        - symbol_name: If semantic, the function/class name this chunk represents
-        - symbol_type: Type of symbol ("function", "class", "method", "module")
-
-    Why these parameters:
-    - file_path is required to know what to chunk
-    - chunk_id allows retrieving a specific previously-identified chunk
-    - strategy lets users choose between AST-aware or simple splitting
-    - max_tokens ensures chunks fit within LLM context windows
+        {source, language, start_line, end_line, total_lines} on success,
+        {error} on failure.
     """
-    # SECURITY: Validate file_path is within current working directory
-    # We use cwd as the repo_root since chunking operates on individual files
-    import os
-    cwd = os.getcwd()
-    validate_path(file_path, cwd)
+    if repo_root is None:
+        repo_root = os.getcwd()
 
-    # TODO: Implement chunking logic using tree-sitter AST parsing
+    try:
+        resolved = validate_path(file_path, repo_root)
+    except SecurityError as e:
+        return {"error": str(e)}
+
+    if should_skip_file(resolved):
+        return {
+            "error": f"File skipped: '{resolved.name}' is a binary, lock, or oversized file"
+        }
+
+    try:
+        text = resolved.read_text(encoding="utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return {"error": f"Binary or non-UTF-8 file: '{resolved.name}' cannot be read as text"}
+    except OSError as e:
+        return {"error": f"Cannot read '{resolved}': {e}"}
+
+    lines = text.splitlines()
+    total = len(lines)
+
+    # Clamp range to valid bounds — never crash on out-of-range requests
+    s = max(1, min(start_line, total or 1))
+    e = min(end_line if end_line is not None else total, total or 1)
+    e = max(e, s)
+
     return {
-        "chunk_id": f"{file_path}:1-50",
-        "content": "# Placeholder chunk content\n# Full chunking logic not yet implemented",
-        "start_line": 1,
-        "end_line": 50,
-        "symbol_name": "placeholder_function",
-        "symbol_type": "function",
+        "source": "\n".join(lines[s - 1 : e]),
+        "language": _detect_language(resolved),
+        "start_line": s,
+        "end_line": e,
+        "total_lines": total,
     }
