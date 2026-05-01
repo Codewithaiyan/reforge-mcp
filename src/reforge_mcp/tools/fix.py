@@ -1,67 +1,133 @@
-"""
-Automated Fix Tool.
-
-MCP tool that applies refactoring operations based on scan findings.
-When fully built, will remove dead code, consolidate duplicates,
-fix naming inconsistencies, and run tests to verify changes are safe.
-"""
-
-from typing import Any
+"""Automated Fix Tool."""
 
 import os
+import subprocess
+from typing import Any
 
-from ..utils.security import SecurityError, validate_path
+from ..utils.diff import apply_diff, rollback
+from ..utils.security import SecurityError, validate_path, validate_test_command
+
+
+def _git_stash(repo_root: str) -> bool:
+    try:
+        r = subprocess.run(
+            ["git", "stash"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return r.returncode == 0 and "No local changes to save" not in r.stdout
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return False
+
+
+def _git_stash_pop(repo_root: str) -> None:
+    try:
+        subprocess.run(
+            ["git", "stash", "pop"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        pass
 
 
 def write_fix(
     file_path: str,
-    fix_type: str,
-    chunk_id: str | None = None,
-    description: str | None = None,
-    run_tests: bool = True,
+    diff_str: str,
+    repo_root: str | None = None,
+    test_command: str | None = None,
+    allowed_test_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     """
-    Apply a refactoring fix to a file or chunk.
+    Apply a unified diff to a file and optionally run tests to verify safety.
 
-    Parameter contract:
-    - file_path: Absolute path to the file to modify.
-    - fix_type: Type of fix to apply. One of:
-                - "remove_dead": Remove unused code
-                - "consolidate_duplicate": Merge duplicate implementations
-                - "rename": Fix naming convention violations
-                - "extract_method": Pull out a method for better cohesion
-                - "inline": Remove unnecessary abstraction
-    - chunk_id: Optional chunk identifier to limit the fix scope.
-                If None, applies to the entire file.
-    - description: Optional human-readable description of what this fix does.
-                   Used for commit messages and audit trails.
-    - run_tests: Whether to run tests after applying the fix. Default: True.
-
-    Returns:
-        A fix result dictionary containing:
-        - success: Boolean indicating if the fix was applied
-        - diff: Unified diff showing what changed
-        - test_result: If run_tests=True, the test output (pass/fail, errors)
-        - backup_path: Path to the backup file created before modification
-        - warnings: Any warnings generated during the fix
-
-    Why these parameters:
-    - file_path is required to know what to modify
-    - fix_type determines the refactoring operation to perform
-    - chunk_id enables surgical fixes without touching unrelated code
-    - description provides audit trail for what changed and why
-    - run_tests ensures changes don't break existing functionality
+    Returns {success, test_output, error, rolled_back}.
+    Rolls back automatically (via .bak + git stash pop) if tests fail.
     """
-    # SECURITY: Validate file_path is within current working directory
-    # This prevents modifying files outside the project (e.g., /etc/passwd)
-    cwd = os.getcwd()
-    validate_path(file_path, cwd)
+    if repo_root is None:
+        repo_root = os.getcwd()
 
-    # TODO: Implement fix logic using scanner/ dead_code and duplicates modules
+    try:
+        resolved = validate_path(file_path, repo_root)
+    except SecurityError as e:
+        return {"success": False, "test_output": None, "error": str(e), "rolled_back": False}
+
+    if test_command is not None:
+        try:
+            validate_test_command(test_command, allowed_test_commands or [])
+        except SecurityError as e:
+            return {"success": False, "test_output": None, "error": str(e), "rolled_back": False}
+
+    # Create .bak for reliable file-level rollback
+    bak = resolved.with_suffix(resolved.suffix + ".bak")
+    try:
+        original = resolved.read_text(encoding="utf-8")
+        bak.write_text(original, encoding="utf-8")
+    except OSError as e:
+        return {
+            "success": False,
+            "test_output": None,
+            "error": f"Cannot read/backup '{resolved}': {e}",
+            "rolled_back": False,
+        }
+
+    # Git stash saves any pre-existing dirty state; best-effort, not required
+    stash_created = _git_stash(repo_root)
+
+    if not apply_diff(str(resolved), diff_str):
+        rollback(str(resolved))
+        bak.unlink(missing_ok=True)
+        if stash_created:
+            _git_stash_pop(repo_root)
+        return {
+            "success": False,
+            "test_output": None,
+            "error": "Failed to apply diff — verify the diff is valid and matches the file content",
+            "rolled_back": True,
+        }
+
+    if test_command is None:
+        bak.unlink(missing_ok=True)
+        if stash_created:
+            _git_stash_pop(repo_root)
+        return {"success": True, "test_output": None, "error": None, "rolled_back": False}
+
+    try:
+        proc = subprocess.run(
+            test_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=repo_root,
+        )
+        test_output = proc.stdout + proc.stderr
+        passed = proc.returncode == 0
+    except subprocess.TimeoutExpired:
+        passed = False
+        test_output = "Test command timed out"
+    except (subprocess.SubprocessError, OSError) as e:
+        passed = False
+        test_output = str(e)
+
+    if passed:
+        bak.unlink(missing_ok=True)
+        if stash_created:
+            _git_stash_pop(repo_root)
+        return {"success": True, "test_output": test_output, "error": None, "rolled_back": False}
+
+    # Tests failed — restore original file
+    rollback(str(resolved))
+    bak.unlink(missing_ok=True)
+    if stash_created:
+        _git_stash_pop(repo_root)
     return {
-        "success": True,
-        "diff": "--- a/src/file.py\n+++ b/src/file.py\n@@ -1,3 +1,3 @@\n-# old\n+# new\n # placeholder",
-        "test_result": {"passed": True, "output": "Tests passed (placeholder)"},
-        "backup_path": f"{file_path}.bak",
-        "warnings": ["Fix logic not yet fully implemented — placeholder response"],
+        "success": False,
+        "test_output": test_output,
+        "error": "Tests failed — changes rolled back",
+        "rolled_back": True,
     }
