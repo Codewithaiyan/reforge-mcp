@@ -41,7 +41,6 @@ def test_binary_file_skipped():
         assert len(processed) == 0
 
 
-@pytest.mark.skip(reason="parser bug with single-function files — fix pending in parser.py")
 def test_duplicates_detected():
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)

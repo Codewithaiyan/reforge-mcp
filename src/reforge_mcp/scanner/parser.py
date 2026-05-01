@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from tree_sitter import Language, Parser, Query
+from tree_sitter import Language, Parser, Query, QueryCursor
 
 from ..utils.security import should_skip_file
 
@@ -155,6 +155,25 @@ class LanguageAdapter(Protocol):
         ...
 
 
+def _run_captures(query: Query, root: "Node") -> list[tuple["Node", str]]:
+    """
+    Run a tree-sitter query and return (node, capture_name) pairs sorted by
+    start position.
+
+    tree-sitter 0.25+ moved query execution to QueryCursor; Query alone no
+    longer exposes .captures() or .matches().  QueryCursor.captures() returns
+    {capture_name: [Node, ...]} so we normalise that back to the flat list the
+    rest of the code expects.
+    """
+    raw: dict = QueryCursor(query).captures(root)
+    pairs: list[tuple["Node", str]] = []
+    for name, nodes in raw.items():
+        for node in nodes:
+            pairs.append((node, name))
+    pairs.sort(key=lambda x: x[0].start_byte)
+    return pairs
+
+
 class PythonAdapter:
     """
     Tree-sitter adapter for Python.
@@ -194,6 +213,12 @@ class PythonAdapter:
 
     def parse(self, source: bytes, file_path: str) -> ParseResult:
         """Parse Python source code and extract symbols."""
+        # Strip BOM and leading blank lines without shifting tracked line numbers —
+        # tree-sitter handles leading whitespace fine but some editors emit a BOM
+        # that confuses the query engine at row 0, col 0.
+        if source.startswith(b"\xef\xbb\xbf"):
+            source = source[3:]
+
         tree = self._parser.parse(source)
         root = tree.root_node
 
@@ -201,8 +226,6 @@ class PythonAdapter:
         classes = []
         imports = []
 
-        # Query for function definitions (including inside decorated_definition)
-        # We need two queries: one for regular functions, one for decorated ones
         func_query = Query(
             self._language,
             """
@@ -213,7 +236,6 @@ class PythonAdapter:
             """,
         )
 
-        # Query for class definitions
         class_query = Query(
             self._language,
             """
@@ -224,7 +246,6 @@ class PythonAdapter:
             """,
         )
 
-        # Query for imports
         import_query = Query(
             self._language,
             """
@@ -234,7 +255,6 @@ class PythonAdapter:
 
             (import_from_statement
                 module_name: (dotted_name) @module
-                name: (dotted_name | aliased_import) @name
             ) @from_import
             """,
         )
@@ -279,23 +299,20 @@ class PythonAdapter:
                 )
             return None
 
-        # First, find all decorated definitions and extract their functions
+        # `decorated_definition` has no named field `decorator:` in the grammar.
         decorated_query = Query(
             self._language,
             """
             (decorated_definition
-                decorator: (_) @decorator
-                function_definition @func
+                (function_definition) @func
             ) @decorated_func
             """,
         )
 
         processed_nodes = set()
 
-        for match in decorated_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(decorated_query, root):
             if capture_name == "decorated_func":
-                # Find the function_definition child
                 for child in node.children:
                     if child.type == "function_definition":
                         func_info = extract_function(child)
@@ -303,21 +320,15 @@ class PythonAdapter:
                             functions.append(func_info)
                             processed_nodes.add(id(child))
 
-        # Extract regular functions (not decorated, not already processed)
-        for match in func_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(func_query, root):
             if capture_name == "function":
-                # Skip if already processed (was inside decorated_definition)
                 if id(node) in processed_nodes:
                     continue
-
                 func_info = extract_function(node)
                 if func_info:
                     functions.append(func_info)
 
-        # Extract classes
-        for match in class_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(class_query, root):
             if capture_name == "class":
                 class_node = node
                 name_node = None
@@ -358,9 +369,7 @@ class PythonAdapter:
                         )
                     )
 
-        # Extract imports
-        for match in import_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(import_query, root):
             if capture_name == "import":
                 # Bare import: import os
                 name_parts = []
@@ -462,8 +471,8 @@ class JavaScriptAdapter:
         classes = []
         imports = []
 
-        # Query for function declarations and arrow functions
-        func_query = self._language.query(
+        func_query = Query(
+            self._language,
             """
             (function_declaration
                 name: (identifier) @name
@@ -486,21 +495,21 @@ class JavaScriptAdapter:
                     body: (_) @body
                 )
             ) @arrow
-            """
+            """,
         )
 
-        # Query for class declarations
-        class_query = self._language.query(
+        class_query = Query(
+            self._language,
             """
             (class_declaration
                 name: (identifier) @name
                 body: (class_body) @body
             ) @class
-            """
+            """,
         )
 
-        # Query for imports
-        import_query = self._language.query(
+        import_query = Query(
+            self._language,
             """
             (import_statement
                 (import_clause
@@ -509,12 +518,10 @@ class JavaScriptAdapter:
                 )
                 source: (string) @source
             ) @import
-            """
+            """,
         )
 
-        # Extract functions
-        for match in func_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(func_query, root):
             if capture_name in ("function", "method", "arrow"):
                 func_node = node
                 name_node = None
@@ -556,9 +563,7 @@ class JavaScriptAdapter:
                         )
                     )
 
-        # Extract classes
-        for match in class_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(class_query, root):
             if capture_name == "class":
                 class_node = node
                 name_node = None
@@ -599,9 +604,7 @@ class JavaScriptAdapter:
                         )
                     )
 
-        # Extract imports
-        for match in import_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(import_query, root):
             if capture_name == "import":
                 source_node = None
                 names = []
@@ -686,8 +689,8 @@ class GoAdapter:
         classes = []
         imports = []
 
-        # Query for function and method declarations
-        func_query = self._language.query(
+        func_query = Query(
+            self._language,
             """
             (function_declaration
                 name: (identifier) @name
@@ -698,11 +701,11 @@ class GoAdapter:
                 name: (field_identifier) @name
                 body: (_) @body
             ) @method
-            """
+            """,
         )
 
-        # Query for type declarations (structs, interfaces)
-        type_query = self._language.query(
+        type_query = Query(
+            self._language,
             """
             (type_declaration
                 (type_spec
@@ -710,11 +713,11 @@ class GoAdapter:
                     type: (_) @type
                 )
             ) @type
-            """
+            """,
         )
 
-        # Query for imports
-        import_query = self._language.query(
+        import_query = Query(
+            self._language,
             """
             (import_declaration
                 (import_spec
@@ -729,12 +732,10 @@ class GoAdapter:
                     )
                 )
             ) @import_list
-            """
+            """,
         )
 
-        # Extract functions
-        for match in func_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(func_query, root):
             if capture_name in ("function", "method"):
                 func_node = node
                 name_node = None
@@ -766,9 +767,7 @@ class GoAdapter:
                         )
                     )
 
-        # Extract types (classes in Go are structs with methods)
-        for match in type_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(type_query, root):
             if capture_name == "type":
                 type_node = node
                 name_node = None
@@ -792,9 +791,7 @@ class GoAdapter:
                         )
                     )
 
-        # Extract imports
-        for match in import_query.captures(root):
-            node, capture_name = match
+        for node, capture_name in _run_captures(import_query, root):
             if capture_name in ("import", "import_list"):
                 for child in node.children:
                     if child.type == "interpreted_string_literal":

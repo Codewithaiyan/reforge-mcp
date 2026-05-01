@@ -152,9 +152,13 @@ def scan_repo(
     logger.info("Building dependency graph...")
     dep_graph = _build_dependency_graph(parse_results)
 
+    # Detect monorepo subprojects
+    subprojects = _detect_subprojects(root)
+
     logger.info(
         f"Scan complete: {total_files} files, {total_functions} functions, "
-        f"{len(dead_code)} dead code findings, {len(duplicates)} duplicate groups"
+        f"{len(dead_code)} dead code findings, {len(duplicates)} duplicate groups, "
+        f"{len(subprojects)} subprojects"
     )
 
     return {
@@ -170,6 +174,7 @@ def scan_repo(
         "duplicates": duplicates,
         "god_files": god_files,
         "dep_graph": dep_graph,
+        "subprojects": subprojects,
     }
 
 
@@ -216,6 +221,55 @@ def _load_ignore_dirs(root: Path) -> set[str]:
     except Exception as e:
         logger.warning(f"Failed to parse reforge.toml: {e}")
         return default_ignore
+
+
+_SUBPROJECT_MARKERS: dict[str, tuple[str, str]] = {
+    "pyproject.toml": ("python", "pytest"),
+    "setup.py": ("python", "pytest"),
+    "package.json": ("javascript", "npm test"),
+    "tsconfig.json": ("typescript", "npm test"),
+    "go.mod": ("go", "go test ./..."),
+}
+
+_SUBPROJECT_IGNORE: set[str] = {
+    "node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build",
+}
+
+
+def _detect_subprojects(root: Path) -> list[dict[str, str]]:
+    """
+    Walk subdirectories looking for project marker files and return a list of
+    {root, language, test_command} dicts for each discovered subproject.
+
+    The repo root itself is excluded — only proper subdirectories are returned.
+    When multiple markers exist in the same directory, the first one wins
+    (ordered by _SUBPROJECT_MARKERS insertion order).
+    """
+    seen: set[str] = set()
+    subprojects: list[dict[str, str]] = []
+
+    for marker, (language, test_command) in _SUBPROJECT_MARKERS.items():
+        for marker_path in sorted(root.rglob(marker)):
+            subdir = marker_path.parent
+            if subdir == root:
+                continue
+            # Skip ignored directories
+            rel_parts = set(subdir.relative_to(root).parts)
+            if rel_parts & _SUBPROJECT_IGNORE:
+                continue
+            key = str(subdir)
+            if key in seen:
+                continue
+            seen.add(key)
+            subprojects.append(
+                {
+                    "root": str(subdir.relative_to(root)),
+                    "language": language,
+                    "test_command": test_command,
+                }
+            )
+
+    return subprojects
 
 
 def _find_god_files(
