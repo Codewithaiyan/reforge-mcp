@@ -23,6 +23,7 @@ Unlike regex-based scanning, AST parsing understands code structure:
 """
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -348,6 +349,73 @@ def _resolve_import_to_file(import_path: str, current_dir: Path) -> Path | None:
         return package_init
 
     return None
+
+
+def get_health_score(
+    root_path: str,
+    state_path: str | None = None,
+) -> dict[str, Any]:
+    """
+    Compute a 0-100 health score from scan metrics and optionally persist to state.
+
+    Scoring (penalties are capped per category):
+    - duplicate_ratio  → up to -30
+    - dead_code_ratio  → up to -30
+    - god_file_count   → up to -20 (5 pts each)
+    - circular_count   → up to -20 (10 pts each)
+    """
+    scan = scan_repo(root_path)
+
+    summary = scan.get("summary", {})
+    total_functions = max(summary.get("total_functions", 0), 1)
+    total_files = max(summary.get("total_files", 0), 1)
+
+    dead_code = scan.get("dead_code", [])
+    duplicates = scan.get("duplicates", [])
+    god_files = scan.get("god_files", [])
+    circular = scan.get("dep_graph", {}).get("circular", [])
+
+    dead_code_ratio = len(dead_code) / total_functions
+    dup_symbols = sum(len(g.get("locations", [])) for g in duplicates)
+    duplicate_ratio = dup_symbols / total_functions
+    god_file_count = len(god_files)
+    circular_count = len(circular)
+
+    score = 100.0
+    score -= min(30.0, duplicate_ratio * 100)
+    score -= min(30.0, dead_code_ratio * 100)
+    score -= min(20.0, god_file_count * 5.0)
+    score -= min(20.0, circular_count * 10.0)
+    score = max(0.0, round(score, 1))
+
+    entry: dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "score": score,
+        "dead_code_ratio": round(dead_code_ratio, 3),
+        "duplicate_ratio": round(duplicate_ratio, 3),
+        "god_file_count": god_file_count,
+        "circular_count": circular_count,
+        "total_files": total_files,
+        "total_functions": total_functions,
+    }
+
+    if state_path is not None:
+        from ..utils.state import load_state, save_state
+
+        state = load_state(state_path)
+        state["health_history"] = state.get("health_history", []) + [entry]
+        save_state(state_path, state)
+
+    return {
+        "score": score,
+        "breakdown": {
+            "dead_code_ratio": entry["dead_code_ratio"],
+            "duplicate_ratio": entry["duplicate_ratio"],
+            "god_file_count": god_file_count,
+            "circular_count": circular_count,
+        },
+        "scan_summary": summary,
+    }
 
 
 def _detect_cycles(
