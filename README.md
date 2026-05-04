@@ -8,6 +8,8 @@ An MCP server that connects Claude Code to your codebase and systematically clea
 
 ---
 
+![CI](https://github.com/Codewithaiyan/reforge-mcp/actions/workflows/ci.yml/badge.svg)
+
 ## What it does
 
 Vibe-coded repos accumulate fast: functions nobody calls, copy-pasted logic in three files, one 900-line god module that does everything, circular imports that break at runtime. Spotting this manually takes hours; fixing it safely takes longer. `reforge-mcp` exposes your codebase to Claude Code as a set of structured tools so it can analyse, prioritise, and apply fixes autonomously — one atomic commit at a time.
