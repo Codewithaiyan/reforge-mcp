@@ -13,6 +13,7 @@ from .tools.git import git_commit
 from .tools.scan import get_health_score, scan_repo
 from .tools.chunk import get_chunk
 from .tools.fix import write_fix
+from .scanner.risk import score_risk
 from .utils.state import (
     generate_changelog,
     load_state,
@@ -128,6 +129,27 @@ def write_memory_tool(
         return {"success": True, "key": key, "previous_value": previous}
     except OSError as e:
         return {"success": False, "key": key, "previous_value": previous, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# risk scoring
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def score_risk_tool(
+    symbol: str,
+    file: str,
+    dep_graph: dict[str, Any],
+    scan_result: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Score the risk of changing a symbol (0 = safe, 100 = very risky).
+
+    Factors: inbound references, test coverage, file size, circular deps.
+    Returns score, per-factor breakdown, and a recommendation string.
+    """
+    return score_risk(symbol, file, dep_graph, scan_result)
 
 
 # ---------------------------------------------------------------------------
