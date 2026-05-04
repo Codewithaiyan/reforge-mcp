@@ -37,9 +37,17 @@ Vibe-coded repos accumulate fast: functions nobody calls, copy-pasted logic in t
 
 **Prerequisites:** Python 3.11+, Claude Code CLI, Git
 
+### From PyPI (recommended)
+
+```bash
+pip install reforge-mcp
+```
+
+### From source
+
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-org/reforge-mcp.git
+git clone https://github.com/codewithaiyan/reforge-mcp.git
 cd reforge-mcp
 
 # 2. Create and activate a virtual environment
@@ -48,9 +56,11 @@ source venv/bin/activate          # Windows: venv\Scripts\activate
 
 # 3. Install in editable mode
 pip install -e .
+```
 
-# 4. Find the absolute path to the server entry point
-which reforge-mcp                 # e.g. /home/you/reforge-mcp/venv/bin/reforge-mcp
+```bash
+# Find the absolute path to the server entry point
+which reforge-mcp                 # e.g. /home/you/.local/bin/reforge-mcp
 ```
 
 **Add to `claude_desktop_config.json`** (usually `~/.config/claude/claude_desktop_config.json` on Linux, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):

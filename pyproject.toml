@@ -4,6 +4,30 @@ version = "0.1.0"
 description = "MCP server that automatically cleans up messy vibe-coded repositories"
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Codewithaiyan" },
+]
+keywords = [
+    "mcp",
+    "claude",
+    "refactoring",
+    "static-analysis",
+    "dead-code",
+    "code-quality",
+    "ast",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Intended Audience :: Developers",
+]
 dependencies = [
     "fastmcp>=0.1.0",
     "tree-sitter>=0.24.0",
@@ -16,12 +40,17 @@ dependencies = [
     "tree-sitter-go>=0.25.0",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[project.urls]
+Homepage = "https://github.com/codewithaiyan/reforge-mcp"
+Repository = "https://github.com/codewithaiyan/reforge-mcp"
+"Bug Tracker" = "https://github.com/codewithaiyan/reforge-mcp/issues"
 
 [project.scripts]
 reforge-mcp = "reforge_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reforge_mcp"]
@@ -31,3 +60,6 @@ dev-dependencies = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
