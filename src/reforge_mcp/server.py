@@ -14,6 +14,7 @@ from .tools.scan import get_health_score, scan_repo
 from .tools.chunk import get_chunk
 from .tools.fix import write_fix
 from .scanner.risk import score_risk
+from .scanner.architecture import infer_architecture
 from .utils.state import (
     generate_changelog,
     load_state,
@@ -129,6 +130,28 @@ def write_memory_tool(
         return {"success": True, "key": key, "previous_value": previous}
     except OSError as e:
         return {"success": False, "key": key, "previous_value": previous, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# architecture inference
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def infer_architecture_tool(repo_path: str) -> dict[str, Any]:
+    """
+    Infer the architectural pattern of a repository.
+
+    Runs scan_repo, detects pattern (REST API, CLI tool, library, web frontend),
+    identifies entry points and logical modules, stores the result in
+    reforge-state.json under architecture_hypothesis, and returns the inference.
+    """
+    scan_result = scan_repo(repo_path)
+    result = infer_architecture(repo_path, scan_result)
+    state = load_state(repo_path)
+    state["architecture_hypothesis"] = result
+    save_state(repo_path, state)
+    return result
 
 
 # ---------------------------------------------------------------------------
