@@ -114,16 +114,3 @@ def apply_diff(file_path: str | Path, diff_str: str) -> bool:
         tmp.unlink(missing_ok=True)
         return False
     return True
-
-
-def rollback(file_path: str | Path) -> bool:
-    """Restore a file from its .bak backup created before apply_diff. Returns True on success."""
-    path = Path(file_path)
-    bak = path.with_suffix(path.suffix + ".bak")
-    if not bak.exists():
-        return False
-    try:
-        bak.replace(path)
-        return True
-    except OSError:
-        return False

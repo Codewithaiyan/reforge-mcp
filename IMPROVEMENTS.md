@@ -1147,3 +1147,80 @@ for it to report. A full disk or a read-only checkout looked like a success.
 
 **Resolution:** `generate_changelog` returns whether it wrote the file, and the
 tool returns `success: False` with an error naming the path when it did not.
+
+
+## R44 — Kotlin was unreadable, and reading it surfaced three false-positive classes
+
+**Motivation:** the repository behind R28-R33 is an Android app with a C++ PC
+companion. 39 of its tracked files are Kotlin and the scan could see none of
+them: 6 files of 175, a report on the web tooling rather than on the project.
+
+**Added:** a `KotlinAdapter` over `tree-sitter-kotlin`, covering functions,
+classes, objects, methods, imports and supertypes. All 39 files parse with zero
+errors, including an 854-line one. The scan went from 6 files to 48, and from
+79 functions to 507.
+
+Three false-positive classes had to be closed before the output was usable:
+
+1. **96 dead-code findings, mostly JUnit tests.** Kotlin tests carry no
+   `test_` prefix for the name-based exemption to catch; they are annotated
+   `@Test`. Annotations are now collected into `FunctionInfo.decorators`, so the
+   existing decorator exemption handles `@Test`, `@Composable` and the rest with
+   no new rule. 96 to 26.
+
+2. **The remaining 26 were framework callbacks on anonymous objects.** Kotlin
+   puts most of them on `object : MediaCodec.Callback()`, which is not a named
+   class, so the external-base exemption had no `ClassInfo` to work from. The
+   `override` keyword is collected as a marker instead: an override is reached
+   through its supertype, so something dispatches to it even when no call names
+   it. 26 to 3, and those 3 are genuine - each appears exactly once in the
+   repository, at its own definition.
+
+3. **Eight empty callbacks reported as one duplicate group.**
+   `_is_shared_interface_method` required every member to be a method of a named
+   class, which an anonymous object's members are not. It now also accepts a
+   one-line `override`. Three groups to two, and both survivors are real: a
+   `hex` helper written twice, and `ms` / `motionMs`.
+
+**Supertype extraction, twice wrong first:** `delegation_specifier` is wrapped
+in a `delegation_specifiers` node, and reading only direct children left every
+Android class with no bases - which would have reported every lifecycle
+override as dead.
+
+**Known limitation, deliberate:** nothing in a class extending a base outside
+the repository is reported, not even an unused private helper. On Android that
+is nearly every class. Narrowing the exemption to overrides only would find
+more and would start calling an `android:onClick` handler named in an XML
+layout dead, which is the trade this module exists to avoid.
+
+**Not added:** C and C++. Their real project files parse cleanly, but 94 tracked
+`.c`/`.cpp`/`.h` files plus 27 vendored ones is a larger job, and the CMake
+compiler-probe files that parse with 18-44 errors are untracked and already
+excluded by R30.
+
+## R45 — a call inside an f-string did not count as a reference
+
+**Evidence:** this project's own scan, run immediately after R44, reported
+`_fix_label` dead. It is called on the next line of the same function:
+
+```python
+items = "".join(f"- {_fix_label(f)}" for f in fix_log)
+```
+
+**Root cause:** `_collect_references` skips `string` nodes whole, so a docstring
+mentioning `foo()` is not counted as a use of `foo`. An f-string *is* a `string`
+node, and a JS template literal a `template_string`, so every call inside `{...}`
+or `${...}` was swallowed with it.
+
+Any Python codebase that calls a function inside an f-string - which is most of
+them - had false dead-code findings from this.
+
+**Resolution:** `interpolation` and `template_substitution` children are
+descended into rather than skipped. A name mentioned in a plain string is still
+not a reference, which has its own test so the docstring hole stays closed.
+
+**Also found by that scan:** `Path_stem` in `risk.py` and `rollback` in
+`diff.py` were genuinely dead - the first lost its only caller in R34, the
+second in R39. Both deleted. R39 recorded a decision to keep `rollback` "as a
+public helper"; that was wrong, since it restores from a `.bak` name nothing
+writes any more. The self-scan now reports zero dead code.

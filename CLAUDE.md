@@ -62,7 +62,7 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
 fixes. R1-R36 are closed as of 0.2.6. What remains true:
 
-- **Only Python, JavaScript, TypeScript and Go are parsed.** Everything else is
+- **Only Python, JavaScript, TypeScript, Go and Kotlin are parsed.** Everything else is
   counted in `summary.unscanned_source_files` and nothing more. A six-file
   result on a Kotlin and C++ repo is a report on six files — check `coverage`
   from `get_health_score` before drawing any conclusion about a repository.
@@ -79,6 +79,11 @@ fixes. R1-R36 are closed as of 0.2.6. What remains true:
   repo-wide name collision hides a dead function. Methods of a class deriving
   from anything outside the repo are exempt entirely (R26), which also exempts
   same-named plain functions elsewhere.
+- **Nothing in a class extending a base outside the repo is reported dead**
+  (R26). On Android that covers almost every class, so method-level dead
+  code goes unreported there; Kotlin findings come from top-level and
+  extension functions. Narrowing it to overrides only would find more and
+  would start calling an `android:onClick` handler named in XML dead.
 - **An exported browser entry point can still be reported as dead code**, since
   nothing in the repo references a function the HTML calls. Unverified on a real
   front-end repo; treat dead-code hits in browser scripts as suspect.

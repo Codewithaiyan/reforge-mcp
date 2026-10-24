@@ -191,3 +191,54 @@ def test_plain_class_methods_are_still_reportable(tmp_path: Path) -> None:
     )
 
     assert found == {"orphan"}
+
+
+def test_a_call_inside_an_f_string_counts_as_a_reference(tmp_path: Path) -> None:
+    # an f-string is a `string` node, which was skipped whole, so this
+    # project's own scan reported _fix_label dead while it was being called
+    (tmp_path / "mod.py").write_text(
+        "def label(entry):\n"
+        "    return str(entry)\n"
+        "\n"
+        "\n"
+        "def render(items):\n"
+        '    return "".join(f"- {label(i)}" for i in items)\n',
+        encoding="utf-8",
+    )
+
+    dead = {d.symbol for d in find_dead_code(parse_directory(tmp_path, tmp_path))}
+
+    assert "label" not in dead
+
+
+def test_a_call_inside_a_js_template_literal_counts_as_a_reference(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "mod.js").write_text(
+        "function label(x) { return String(x); }\n"
+        "function render(xs) { return xs.map((x) => `- ${label(x)}`); }\n",
+        encoding="utf-8",
+    )
+
+    dead = {d.symbol for d in find_dead_code(parse_directory(tmp_path, tmp_path))}
+
+    assert "label" not in dead
+
+
+def test_a_name_only_mentioned_in_a_plain_string_is_still_not_a_reference(
+    tmp_path: Path,
+) -> None:
+    # the interpolation exception must not reopen the docstring hole
+    (tmp_path / "mod.py").write_text(
+        "def orphan():\n"
+        "    return 1\n"
+        "\n"
+        "\n"
+        "def other():\n"
+        '    return "call orphan() somewhere"\n',
+        encoding="utf-8",
+    )
+
+    dead = {d.symbol for d in find_dead_code(parse_directory(tmp_path, tmp_path))}
+
+    assert "orphan" in dead

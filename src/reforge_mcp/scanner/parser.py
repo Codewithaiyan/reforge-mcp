@@ -211,6 +211,17 @@ _OPAQUE_NODE_TYPES = frozenset(
     }
 )
 
+# The one part of a string that is code. An f-string is a `string` node and a
+# JS template literal a `template_string`, so skipping those whole swallowed
+# the calls inside them: f"- {_fix_label(f)}" looked like no use of
+# _fix_label, and this project's own scan reported it dead.
+_INTERPOLATION_NODE_TYPES = frozenset(
+    {
+        "interpolation",
+        "template_substitution",
+    }
+)
+
 
 def _string_values(node: "Node") -> list[str]:
     """Every string literal under a node, with its quotes removed."""
@@ -296,6 +307,9 @@ def _collect_references(root: "Node") -> tuple[str, ...]:
     is exactly what made every function look reachable before. Comments and
     string literals are skipped for the same reason: a docstring mentioning
     `foo()` is not a use of it.
+
+    The exception is an interpolation: the expressions inside an f-string or
+    a template literal are code, and calling a function there is a real use.
     """
     refs: set[str] = set()
     stack = [root]
@@ -303,6 +317,11 @@ def _collect_references(root: "Node") -> tuple[str, ...]:
         node = stack.pop()
 
         if node.type in _OPAQUE_NODE_TYPES:
+            stack.extend(
+                child
+                for child in node.children
+                if child.type in _INTERPOLATION_NODE_TYPES
+            )
             continue
 
         if node.type in _NAME_NODE_TYPES:
@@ -859,6 +878,203 @@ class JavaScriptAdapter:
         )
 
 
+class KotlinAdapter:
+    """
+    Tree-sitter adapter for Kotlin.
+
+    Handles:
+    - Function declarations: fun foo() {}
+    - Class, object and interface declarations
+    - Methods, which sit in a (class_body)
+    - Imports: import a.b.C
+
+    Kotlin names a superclass in a (delegation_specifier), which feeds the
+    external-base exemption in dead_code: an override of an Android callback
+    is called by the framework, not by anything in the repository.
+    """
+
+    def __init__(self):
+        import tree_sitter_kotlin
+
+        self._language = Language(tree_sitter_kotlin.language())
+        self._parser = Parser(self._language)
+        self._name = "kotlin"
+
+    def get_language(self) -> Language:
+        return self._language
+
+    def get_file_extensions(self) -> set[str]:
+        return {".kt", ".kts"}
+
+    def get_language_name(self) -> str:
+        return self._name
+
+    def _name_of(self, node: "Node") -> "Node | None":
+        named = node.child_by_field_name("name")
+        if named is not None:
+            return named
+        for child in node.children:
+            if child.type in ("identifier", "type_identifier", "simple_identifier"):
+                return child
+        return None
+
+    def _body_of(self, node: "Node") -> "Node | None":
+        for child in node.children:
+            if child.type in ("function_body", "class_body", "enum_class_body"):
+                return child
+        return None
+
+    def _markers_of(self, node: "Node") -> tuple[str, ...]:
+        """
+        Annotations and the `override` keyword, as dead_code decorators.
+
+        Annotations behave exactly like a Python decorator here: @Test is
+        collected by a runner and @Composable is called by Compose, so neither
+        is referenced anywhere a parser can see.
+
+        `override` is the stronger signal, and one Python does not offer. An
+        override is reached through its supertype, so something dispatches to
+        it even when no call names it. It also covers what the external-base
+        exemption cannot: Kotlin puts most framework callbacks on an anonymous
+        `object : MediaCodec.Callback()`, which is not a named class and so has
+        no ClassInfo to carry bases.
+        """
+        markers: list[str] = []
+        for child in node.children:
+            if child.type != "modifiers":
+                continue
+            for token in child.text.decode("utf-8", "replace").split():
+                if token.startswith("@"):
+                    markers.append(token[1:].split("(")[0])
+                elif token == "override":
+                    markers.append("override")
+        return tuple(markers)
+
+    def _bases_of(self, node: "Node") -> tuple[str, ...]:
+        """
+        Supertype names, by their last dotted part.
+
+        "MediaCodec.Callback()" is recorded as "Callback", matching how
+        _base_class_names reduces a Python base, so dead_code can compare a
+        base against the classes defined in this repository.
+        """
+        specifiers: list[Node] = []
+        for child in node.children:
+            # the grammar wraps the list in (delegation_specifiers)
+            if child.type == "delegation_specifiers":
+                specifiers.extend(
+                    g for g in child.children if g.type == "delegation_specifier"
+                )
+            elif child.type == "delegation_specifier":
+                specifiers.append(child)
+
+        bases: list[str] = []
+        for spec in specifiers:
+            text = spec.text.decode("utf-8", "replace").split("(")[0].strip()
+            if text:
+                bases.append(text.split(".")[-1])
+        return tuple(bases)
+
+    def parse(self, source: bytes, file_path: str) -> ParseResult:
+        """Parse Kotlin source code and extract symbols."""
+        tree = self._parser.parse(source)
+        root = tree.root_node
+
+        functions: list[FunctionInfo] = []
+        classes: list[ClassInfo] = []
+        imports: list[ImportInfo] = []
+
+        query = Query(
+            self._language,
+            """
+            (function_declaration) @function
+            (class_declaration) @class
+            (object_declaration) @object
+            (import) @import
+            """,
+        )
+
+        for node, capture_name in _run_captures(query, root):
+            if capture_name == "function":
+                name_node = self._name_of(node)
+                if name_node is None:
+                    continue
+                body_node = self._body_of(node)
+                # an interface method or an abstract fun has no body; its
+                # signature is still a definition worth reporting
+                end = (body_node or node).end_point[0] + 1
+                body = ""
+                if body_node is not None:
+                    body = source[body_node.start_byte : body_node.end_byte].decode(
+                        "utf-8", "replace"
+                    )
+                functions.append(
+                    FunctionInfo(
+                        name=name_node.text.decode("utf-8", "replace"),
+                        file=file_path,
+                        start_line=name_node.start_point[0] + 1,
+                        end_line=end,
+                        body_hash=_hash_body(body),
+                        language=self._name,
+                        decorators=self._markers_of(node),
+                    )
+                )
+
+            elif capture_name in ("class", "object"):
+                name_node = self._name_of(node)
+                if name_node is None:
+                    continue
+                body_node = self._body_of(node)
+                methods: list[str] = []
+                if body_node is not None:
+                    for member in body_node.children:
+                        if member.type == "function_declaration":
+                            member_name = self._name_of(member)
+                            if member_name is not None:
+                                methods.append(
+                                    member_name.text.decode("utf-8", "replace")
+                                )
+                classes.append(
+                    ClassInfo(
+                        name=name_node.text.decode("utf-8", "replace"),
+                        file=file_path,
+                        start_line=name_node.start_point[0] + 1,
+                        end_line=node.end_point[0] + 1,
+                        methods=tuple(methods),
+                        language=self._name,
+                        bases=self._bases_of(node),
+                    )
+                )
+
+            elif capture_name == "import":
+                for child in node.children:
+                    if child.type == "qualified_identifier":
+                        module = child.text.decode("utf-8", "replace")
+                        imports.append(
+                            ImportInfo(
+                                names=(module.split(".")[-1],),
+                                from_module=module,
+                                file=file_path,
+                                line=node.start_point[0] + 1,
+                                language=self._name,
+                            )
+                        )
+                        break
+
+        total_lines = source.count(b"\n") + 1
+
+        return ParseResult(
+            file=file_path,
+            language=self._name,
+            references=_collect_references(root),
+            functions=tuple(functions),
+            classes=tuple(classes),
+            imports=tuple(imports),
+            total_lines=total_lines,
+            error=None,
+        )
+
+
 class GoAdapter:
     """
     Tree-sitter adapter for Go.
@@ -1066,6 +1282,7 @@ def _init_adapters() -> list[LanguageAdapter]:
         JavaScriptAdapter(typescript=False),
         JavaScriptAdapter(typescript=True),
         GoAdapter(),
+        KotlinAdapter(),
     ]
 
 

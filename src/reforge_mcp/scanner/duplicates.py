@@ -84,16 +84,22 @@ def _is_shared_interface_method(
     Four adapters each answering `def get_language(self): return self._language`
     is conformance to a Protocol, not copy-paste anyone can consolidate.
 
-    The test is deliberately narrow — every member must be a *method* with a
-    one-line body. A module-level function duplicated across files stays
-    reported however short it is, because that is the case this tool exists to
-    find.
+    The test is deliberately narrow — every member must be a one-line body that
+    is either a method of a named class or marked `override`. A module-level
+    function duplicated across files stays reported however short it is,
+    because that is the case this tool exists to find.
+
+    The `override` arm exists because Kotlin puts most framework callbacks on an
+    anonymous `object : SomeCallback()`, which is not a named class, so its
+    members are in no class's method list. Eight empty camera and surface
+    callbacks were being reported as one duplicate group.
     """
     for loc in locations:
-        if loc.name not in method_names_by_file.get(loc.file, set()):
-            return False
         func = functions_by_location.get((loc.file, loc.line))
         if func is None or func.end_line - func.start_line > 1:
+            return False
+        is_method = loc.name in method_names_by_file.get(loc.file, set())
+        if not is_method and "override" not in func.decorators:
             return False
     return True
 

@@ -87,7 +87,7 @@ def test_health_score_reports_coverage_and_caveats_a_partial_scan(tmp_path) -> N
     # would read as a verdict on the whole repository
     (tmp_path / "a.py").write_text("def f():\n    return 1\n")
     for i in range(9):
-        (tmp_path / f"n{i}.kt").write_text("fun x() {}\n")
+        (tmp_path / f"n{i}.cpp").write_text("int x() { return 1; }\n")
 
     h = get_health_score(str(tmp_path), state_path=None)
 

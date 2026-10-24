@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.2.9 - 2026-10-24
+
+### Added - Kotlin
+
+The repository this tool has been tested against all day is an Android app with
+a C++ PC companion, and the scan could read 6 of its 175 source files. 39 of
+them are Kotlin. All 39 now parse, with zero errors, including an 854-line one.
+
+That scan went from 6 files to 48, and from 79 functions to 507.
+
+Reading Kotlin surfaced three false-positive classes, all now closed:
+
+- **96 dead-code findings, mostly JUnit tests.** Kotlin tests have no `test_`
+  prefix for the name-based exemption to catch; they are annotated `@Test`.
+  Annotations are now collected as decorators, so the existing exemption covers
+  `@Test`, `@Composable` and the rest with no new rule. 96 to 26.
+- **The rest were framework callbacks on anonymous objects.** Kotlin puts them
+  on `object : MediaCodec.Callback()`, which is not a named class, so the
+  external-base exemption had nothing to work from. The `override` keyword is
+  collected as a marker instead: an override is dispatched through its
+  supertype, so something reaches it even when no call names it. 26 to 3, and
+  all three are genuine.
+- **Eight empty callbacks reported as one duplicate group.** The shared
+  interface filter required every member to be a method of a named class. It
+  now also accepts a one-line `override`.
+
+### Fixed - a call inside an f-string did not count as a reference
+
+This project's own scan then reported `_fix_label` dead while it was being
+called on the next line, inside an f-string. `_collect_references` skips
+`string` nodes so that a docstring mentioning `foo()` is not a use of `foo` -
+and an f-string is a `string` node, so every call inside `{...}` went with it.
+The same applied to `${...}` in a JS template literal.
+
+Any codebase that calls a function inside an f-string had false dead-code
+findings from this. Interpolations are now descended into; a name in a plain
+string is still not a reference.
+
+### Removed
+
+`rollback` from `utils.diff` and `Path_stem` from `scanner.risk`, both
+genuinely dead - found by the fixed self-scan. `rollback` restored from a
+`.bak` name that nothing has written since 0.2.7.
+
+### Known limitation
+
+Nothing in a class extending a base outside the repository is reported dead,
+not even an unused private helper. On Android that is nearly every class, so
+Kotlin findings come from top-level and extension functions. Narrowing this to
+overrides only would find more, and would start calling an `android:onClick`
+handler named in an XML layout dead.
+
+C and C++ are not added. Their real project files parse cleanly, but it is a
+larger job than Kotlin was.
+
 ## 0.2.8 - 2026-10-24
 
 The last two untested tools, `get_chunk` and `generate_changelog`. Both were

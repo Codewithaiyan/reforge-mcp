@@ -42,7 +42,7 @@ indicative. `write_fix` will not apply a diff that does not match the file.
 
 - **Health score trending** — every `get_health_score` call appends to `health_history` so you can chart improvement over time
 - **Persistent memory** — `reforge-state.json` survives across Claude Code sessions; stores the architecture hypothesis, fix log and pending work
-- **Monorepo support** — `scan_repo` detects Python, JavaScript, TypeScript, and Go subprojects from their marker files and returns the correct `test_command` per subproject
+- **Monorepo support** — `scan_repo` detects Python, JavaScript, TypeScript, Go and Kotlin subprojects from their marker files and returns the correct `test_command` per subproject
 - **Changelog generation** — `REFORGE_CHANGES.md` is written on demand with score deltas, applied fixes, and pending items
 
 ---
@@ -228,7 +228,7 @@ Reforge works in three phases:
 
 ### 1. Scan
 
-`scan_repo` walks the repository with `parse_directory`, feeding each source file to the appropriate tree-sitter adapter (Python, JavaScript/TypeScript, or Go). Tree-sitter builds a full AST — unlike regex, it understands nested scope, decorators, arrow functions, and generics. The adapters extract functions, classes, and imports into typed dataclasses.
+`scan_repo` walks the repository with `parse_directory`, feeding each source file to the appropriate tree-sitter adapter (Python, JavaScript/TypeScript, Go or Kotlin). Tree-sitter builds a full AST — unlike regex, it understands nested scope, decorators, arrow functions, and generics. The adapters extract functions, classes, and imports into typed dataclasses.
 
 Each parsed file also reports every name it *uses*, collected from the AST while
 skipping each definition's own name and the contents of comments and strings.

@@ -120,3 +120,5 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R41 — let get_chunk read a slice of an oversized file (0.2.8)
 - [x] R42 — survive malformed reforge-state.json when writing the changelog (0.2.8)
 - [x] R43 — report a failed changelog write instead of claiming success (0.2.8)
+- [x] R44 — Kotlin adapter, with the annotation, override and duplicate fixes it needed (0.2.9)
+- [x] R45 — count calls inside f-strings and template literals as references (0.2.9)

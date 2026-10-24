@@ -99,12 +99,14 @@ def test_unsupported_source_files_are_counted(tmp_path: Path) -> None:
     (tmp_path / "Proto.kt").write_text("class A\n")
     (tmp_path / "link.cpp").write_text("int main(){}\n")
     (tmp_path / "protocol.h").write_text("#pragma once\n")
+    (tmp_path / "Thing.java").write_text("class Thing {}\n")
 
     summary = scan_repo(str(tmp_path))["summary"]
 
-    assert summary["total_files"] == 1
+    # .kt gained an adapter in 0.2.9, so it is scanned rather than counted
+    assert summary["total_files"] == 2
     assert summary["unscanned_source_files"] == 3
-    assert summary["unscanned_by_extension"] == {".kt": 1, ".cpp": 1, ".h": 1}
+    assert summary["unscanned_by_extension"] == {".cpp": 1, ".h": 1, ".java": 1}
 
 
 def test_ignored_directories_are_not_counted_as_unscanned(tmp_path: Path) -> None:
@@ -113,7 +115,7 @@ def test_ignored_directories_are_not_counted_as_unscanned(tmp_path: Path) -> Non
     (tmp_path / "tool.py").write_text("def go():\n    return 1\n")
     vendored = tmp_path / "node_modules"
     vendored.mkdir()
-    (vendored / "junk.kt").write_text("class Junk\n")
+    (vendored / "junk.cpp").write_text("int junk(){}\n")
 
     assert scan_repo(str(tmp_path))["summary"]["unscanned_source_files"] == 0
 

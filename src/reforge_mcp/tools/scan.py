@@ -476,7 +476,7 @@ def _build_dependency_graph(
     }
 
 
-_SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go")
+_SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".kt", ".kts")
 
 # Source files no adapter can read. Counted and reported so a partial scan is
 # never mistaken for a verdict on the whole repository: a seven-file result on a
@@ -488,7 +488,7 @@ _SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go")
 _UNSUPPORTED_SOURCE_EXTENSIONS = frozenset(
     {
         ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh",
-        ".cs", ".java", ".kt", ".kts", ".scala", ".groovy",
+        ".cs", ".java", ".scala", ".groovy",
         ".rb", ".php", ".rs", ".swift", ".m", ".mm",
         ".dart", ".ex", ".exs", ".erl", ".hs", ".ml", ".clj",
         ".lua", ".pl", ".r", ".jl", ".zig", ".nim",

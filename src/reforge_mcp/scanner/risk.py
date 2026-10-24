@@ -152,9 +152,3 @@ def score_risk(
         "referenced_by": sorted(referring)[:10],
         "recommendation": recommendation,
     }
-
-
-def Path_stem(path: str) -> str:
-    """Return the stem (filename without extension) of a path string."""
-    import os
-    return os.path.splitext(os.path.basename(path))[0]
