@@ -409,8 +409,16 @@ every command is rejected. The README advertises a built-in allowlist
 differ, and the useful path requires the *caller* to supply the allowlist, which
 is not a security boundary at all.
 
-**Fix:** a module-level `DEFAULT_ALLOWED_TEST_COMMANDS` used when the argument is
-omitted. Keep the chaining-operator rejection; it is good.
+**Fixed 2026-10-24.** `DEFAULT_ALLOWED_TEST_COMMANDS` lives in `security.py`
+next to the validator, and is used whenever the caller passes no allowlist *or
+an empty one* — an empty list meaning "reject everything" is not an API anyone
+wants, and it was the behaviour `write_fix` triggered on every call. The
+chaining-operator rejection is unchanged.
+
+Worth stating plainly: an allowlist that is empty unless the caller fills it is
+not a security boundary, it is a disabled feature. The documented runners
+(`pytest`, `npm test`, `go test`, `tox`, `cargo test` and friends) now work out
+of the box, and `rm -rf /` is still refused.
 
 ### R14. `shell=True` for the test command
 `src/reforge_mcp/tools/fix.py:103`
@@ -419,8 +427,19 @@ Mitigated by the operator blocklist, but prefix matching plus a shell is a
 weaker boundary than it needs to be: `pytest --foo=$(...)` is blocked only
 because `$(` is in the blocklist, which is an enumerate-the-bad approach.
 
-**Fix:** `shlex.split` and run without a shell. Validate `argv[0]` against the
-allowlist. Strictly simpler and strictly safer.
+**Fixed 2026-10-24.** The command is now `shlex.split`, its executable
+resolved with `shutil.which`, and run as an argv list with no shell — so nothing
+in the string can be interpreted as shell syntax and the operator blocklist
+becomes defence in depth rather than the only defence.
+
+`shutil.which` was the detail that made this safe to do rather than a Windows
+regression: `subprocess.run(["npm", "test"])` fails there because npm ships as
+`npm.cmd`, and `which` resolves exactly those shims. A missing executable now
+returns `Test command not found: <name>` and rolls the fix back, instead of
+whatever the shell would have said.
+
+Prefix matching against the allowlist is kept rather than switching to an
+`argv[0]` check, because entries like `python3 -m pytest` are multi-token.
 
 ### R15. God-file export counts are inflated and the thresholds are unexplained
 `src/reforge_mcp/tools/scan.py` — `_find_god_files`
@@ -461,7 +480,14 @@ in the report rather than special-cased.
 `os.symlink` raises `WinError 1314` without Developer Mode or elevation. CI is
 Linux so it passes there, but the suite is red for Windows contributors.
 
-**Fix:** `@pytest.mark.skipif` on a probe for symlink privilege.
+**Fixed 2026-10-24.** `@pytest.mark.skipif` on `_symlinks_available()`, which
+probes by actually creating a symlink in a temp directory rather than guessing
+from `os.name` — Developer Mode and elevation both change the answer on the same
+platform.
+
+**The suite is now fully green for the first time: 103 passed, 1 skipped, 0
+failed.** The security property itself is still covered on any platform that
+permits the fixture, which includes CI.
 
 ### R17. CI tests one platform and one Python version
 `.github/workflows/ci.yml`

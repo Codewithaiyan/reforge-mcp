@@ -1,6 +1,8 @@
 """Automated Fix Tool."""
 
 import os
+import shlex
+import shutil
 import subprocess
 from typing import Any
 
@@ -31,7 +33,7 @@ def write_fix(
 
     if test_command is not None:
         try:
-            validate_test_command(test_command, allowed_test_commands or [])
+            validate_test_command(test_command, allowed_test_commands)
         except SecurityError as e:
             return {"success": False, "test_output": None, "error": str(e), "rolled_back": False}
 
@@ -62,23 +64,38 @@ def write_fix(
         bak.unlink(missing_ok=True)
         return {"success": True, "test_output": None, "error": None, "rolled_back": False}
 
+    # No shell: the command is split here and the executable resolved by name,
+    # so nothing in it can be interpreted as shell syntax. shutil.which also
+    # finds the .cmd shims that npm and yarn install on Windows.
     try:
-        proc = subprocess.run(
-            test_command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=repo_root,
-        )
-        test_output = proc.stdout + proc.stderr
-        passed = proc.returncode == 0
-    except subprocess.TimeoutExpired:
+        argv = shlex.split(test_command)
+    except ValueError as e:
+        argv = []
+        test_output = f"Could not parse test command: {e}"
+
+    executable = shutil.which(argv[0]) if argv else None
+
+    if executable is None:
         passed = False
-        test_output = "Test command timed out"
-    except (subprocess.SubprocessError, OSError) as e:
-        passed = False
-        test_output = str(e)
+        if argv:
+            test_output = f"Test command not found: {argv[0]}"
+    else:
+        try:
+            proc = subprocess.run(
+                [executable, *argv[1:]],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=repo_root,
+            )
+            test_output = proc.stdout + proc.stderr
+            passed = proc.returncode == 0
+        except subprocess.TimeoutExpired:
+            passed = False
+            test_output = "Test command timed out"
+        except (subprocess.SubprocessError, OSError) as e:
+            passed = False
+            test_output = str(e)
 
     if passed:
         bak.unlink(missing_ok=True)

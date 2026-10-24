@@ -76,3 +76,42 @@ class TestWriteFix:
         assert result["success"] is False
         assert result["error"] is not None
         assert outer.read_text() == "secret\n"
+
+    def test_default_allowlist_permits_a_documented_runner(self, tmp_path: Path) -> None:
+        # no allowed_test_commands given: the built-in allowlist must apply,
+        # not an empty one that rejects everything
+        f = tmp_path / "code.py"
+        f.write_text("x = 1\n")
+        diff = "@@ -1 +1 @@\n-x = 1\n+x = 99\n"
+
+        result = write_fix(str(f), diff, repo_root=str(tmp_path), test_command="pytest --version")
+
+        assert result["success"] is True
+        assert f.read_text() == "x = 99\n"
+
+    def test_command_outside_the_default_allowlist_is_rejected(self, tmp_path: Path) -> None:
+        f = tmp_path / "code.py"
+        f.write_text("x = 1\n")
+        diff = "@@ -1 +1 @@\n-x = 1\n+x = 99\n"
+
+        result = write_fix(str(f), diff, repo_root=str(tmp_path), test_command="rm -rf /")
+
+        assert result["success"] is False
+        assert f.read_text() == "x = 1\n", "the diff must not be applied at all"
+
+    def test_missing_executable_rolls_back(self, tmp_path: Path) -> None:
+        f = tmp_path / "code.py"
+        f.write_text("x = 1\n")
+        diff = "@@ -1 +1 @@\n-x = 1\n+x = 99\n"
+
+        result = write_fix(
+            str(f),
+            diff,
+            repo_root=str(tmp_path),
+            test_command="gradle test",
+            allowed_test_commands=["gradle test"],
+        )
+
+        assert result["success"] is False
+        assert result["rolled_back"] is True
+        assert f.read_text() == "x = 1\n"

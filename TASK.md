@@ -11,12 +11,12 @@ restate them here.
 - New findings: add to IMPROVEMENTS.md with the next `R<n>`, then add the line here.
 - Log finished milestones at the bottom.
 
-**Status:** M0 complete. M1 complete bar R15. M2 complete bar R12b.
-Baseline 2026-10-24 at `7039af9` — 50 tests pass, 1 Windows-only failure (R16).
-Now 91 pass, same 1 failure.
+**Status:** M0 and M1 complete. M2 complete bar R12b. M3 in progress.
+Baseline 2026-10-24 at `7039af9` — 50 tests pass, 1 Windows-only failure.
+Now **103 pass, 1 skipped, 0 failed**.
 
 Self-scan at this point: 4 dead-code findings (all genuine), 0 duplicate groups,
-24 dependency edges, health score 75.0.
+24 dependency edges, 3 god files, health score 82.8.
 
 ---
 
@@ -67,11 +67,11 @@ function nothing calls.
 
 ## M3 — Harden
 
-- [ ] **R13** `DEFAULT_ALLOWED_TEST_COMMANDS` used when the caller passes no allowlist
-- [ ] **R14** `shlex.split` the test command; drop `shell=True`; validate `argv[0]`
+- [x] **R13** `DEFAULT_ALLOWED_TEST_COMMANDS` in `security.py`, used whenever the caller passes no allowlist or an empty one
+- [x] **R14** `shlex.split` + `shutil.which` + no shell. `which` also resolves the `.cmd` shims npm and yarn install on Windows, which a bare argv would have missed
 - [ ] **R11** Real session identity in `.reforge-session.json` (`session_id`, `started_at`); add a reset path
 - [ ] **R19** End-to-end test: scan -> apply -> test -> commit, plus the three rollback paths
-- [ ] **R16** Skip the symlink test when the platform denies symlink creation
+- [x] **R16** Skipped behind a probe that actually tries to create a symlink. Suite is now fully green: 103 passed, 1 skipped, 0 failed
 - [ ] **R17** CI matrix: ubuntu/macos/windows x 3.11/3.12/3.13; normalise report paths to forward slashes
 
 **Exit:** green suite on all three platforms; no security claim in the README

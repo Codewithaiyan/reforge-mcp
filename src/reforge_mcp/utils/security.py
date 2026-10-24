@@ -196,7 +196,25 @@ def should_skip_file(
     return False
 
 
-def validate_test_command(command: str, allowed_commands: list[str]) -> bool:
+DEFAULT_ALLOWED_TEST_COMMANDS = (
+    "pytest",
+    "python -m pytest",
+    "python3 -m pytest",
+    "tox",
+    "npm test",
+    "npm run test",
+    "yarn test",
+    "pnpm test",
+    "go test",
+    "cargo test",
+    "mvn test",
+    "gradle test",
+)
+
+
+def validate_test_command(
+    command: str, allowed_commands: list[str] | None = None
+) -> bool:
     """
     Validate that a test command is in the allowlist.
 
@@ -222,7 +240,11 @@ def validate_test_command(command: str, allowed_commands: list[str]) -> bool:
 
     Args:
         command: The command to validate
-        allowed_commands: List of allowed command prefixes
+        allowed_commands: Allowed command prefixes; DEFAULT_ALLOWED_TEST_COMMANDS
+                          when omitted or empty. An allowlist is only a boundary
+                          if it has a value when the caller supplies none - an
+                          empty one rejected every command, including the ones
+                          this project documents as supported.
 
     Returns:
         True if the command is allowed
@@ -244,6 +266,8 @@ def validate_test_command(command: str, allowed_commands: list[str]) -> bool:
         )
 
     command_stripped = command.strip()
+    if not allowed_commands:
+        allowed_commands = list(DEFAULT_ALLOWED_TEST_COMMANDS)
 
     # Check for command chaining operators - these enable injection
     dangerous_operators = [";", "&&", "||", "|", "`", "$(",]
