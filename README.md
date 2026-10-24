@@ -343,6 +343,11 @@ Those three keys are the whole file. Every one of them is read.
 
 ---
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). If you used 0.1.0, re-scan: three of the four
+analyses returned meaningless output.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
