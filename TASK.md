@@ -11,9 +11,9 @@ restate them here.
 - New findings: add to IMPROVEMENTS.md with the next `R<n>`, then add the line here.
 - Log finished milestones at the bottom.
 
-**Status:** M0 and M1 complete. M2 complete bar R12b. M3 in progress.
+**Status:** M0, M1, M2 and M3 complete. M4 (the README rewrite) is all that remains.
 Baseline 2026-10-24 at `7039af9` — 50 tests pass, 1 Windows-only failure.
-Now **103 pass, 1 skipped, 0 failed**.
+Now **111 pass, 1 skipped, 0 failed**.
 
 Self-scan at this point: 4 dead-code findings (all genuine), 0 duplicate groups,
 24 dependency edges, 3 god files, health score 82.8.
@@ -60,7 +60,7 @@ Pure subtraction. Safe to do any time, including before M1.
 - [x] **R5** Deleted with R4 — `extract_call_sites`, `call_pattern`, both copies of `general_call_pattern` and the 30-line `FRAMEWORK_DECORATORS` allowlist all went with the rewrite
 - [x] **R10** Deleted `find_similar_functions` (the stub) and dropped `sentence-transformers` and `rich` from `dependencies` — neither was imported anywhere. `uv.lock` shed 939 lines; torch and every nvidia package are gone. No optional extra added: nothing needs one until the feature exists
 - [ ] **R21** Delete `embeddings_cache` from the state schema and `ttl_seconds` from `write_memory_tool`
-- [ ] **R12b** One config loader with one documented schema; delete every key nothing reads
+- [x] **R12b** `[scan] ignore` is read correctly, and the five keys nothing read are deleted. No config module was built: two small readers of two different sections is not duplication worth an abstraction, and the defect was a key mismatch, not the lack of a loader
 
 **Exit:** `pip install reforge-mcp` no longer pulls PyTorch; no module ships a
 function nothing calls.

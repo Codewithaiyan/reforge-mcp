@@ -409,8 +409,26 @@ content. A three-line reinstatement is available if a real need appears; a
 comment promising "no modifications are made" while the tool writes is worse
 than no option at all.
 
-The rest of R12 (the `ignore` / `ignore_dirs` mismatch and the five other
-unwired keys) stays open as R12b in M2.
+**R12b finished 2026-10-24.** `_load_ignore_dirs` now reads
+`[scan] ignore` — the key both the shipped file and the README use — instead of
+a top-level `ignore_dirs` that matched neither. A test proves a configured
+directory is actually skipped, which nothing checked before.
+
+The five keys nothing read (`test_before_fix`, `atomic_commits`,
+`max_file_size_kb`, `skip_extensions`, `auto_detect`) are deleted rather than
+wired. Wiring them would have meant threading config through `parse_directory`
+into `should_skip_file` for file-size and extension limits whose defaults are
+already sensible, and adding switches for an atomic-commit mode that is the only
+mode and a test-before-fix step `write_fix`'s `test_command` already covers.
+`reforge.toml` is now three keys, all of them read, with a comment at the top
+saying so.
+
+Also removed the dead `import tomli` fallback for "Python < 3.11" — the package
+requires 3.11+, so `tomllib` is always present.
+
+**No config module was built**, which the plan above called for. Two small
+readers of two different sections of one file is not duplication worth an
+abstraction, and the defect here was a key mismatch, not a missing loader.
 
 ### R13. `write_fix` has no default test-command allowlist
 `src/reforge_mcp/tools/fix.py:59`

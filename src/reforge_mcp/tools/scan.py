@@ -24,6 +24,7 @@ Unlike regex-based scanning, AST parsing understands code structure:
 
 import logging
 import os
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -210,18 +211,15 @@ def _load_ignore_dirs(root: Path) -> set[str]:
         return default_ignore
 
     try:
-        import tomllib
-    except ImportError:
-        # Python < 3.11
-        import tomli as tomllib
-
-    try:
         config = tomllib.loads(toml_path.read_text())
-        ignore_from_config = config.get("ignore_dirs", [])
-        return default_ignore | set(ignore_from_config)
-    except Exception as e:
+    except (OSError, tomllib.TOMLDecodeError) as e:
         logger.warning(f"Failed to parse reforge.toml: {e}")
         return default_ignore
+
+    # [scan] ignore — the key the shipped config file and the README both use.
+    # This read "ignore_dirs" at the top level, which matched neither, so a
+    # user's ignore list was silently discarded.
+    return default_ignore | set(config.get("scan", {}).get("ignore", []))
 
 
 _SUBPROJECT_MARKERS: dict[str, tuple[str, str]] = {

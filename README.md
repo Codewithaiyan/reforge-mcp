@@ -287,13 +287,15 @@ reforge-mcp/
 ### `reforge.toml` reference
 
 ```toml
-[fix]
-session_budget = 20      # max commits per Claude session before hard stop
-confirm_every  = 5       # pause for confirmation every N commits
-
 [scan]
-ignore_dirs = ["generated", "vendor"]
+ignore = ["generated", "vendor"]   # added to the built-in skip list
+
+[fix]
+confirm_every  = 5       # pause for confirmation every N commits
+session_budget = 20      # max commits per session, per repo, before a hard stop
 ```
+
+Those three keys are the whole file. Every one of them is read.
 
 ---
 
