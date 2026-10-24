@@ -164,9 +164,36 @@ Every function in `server.py` carries `@mcp.tool()`, yet the parser emits
 fixed, every Flask route and pytest fixture in a user's repo will be reported as
 dead code.
 
-**Fix:** capture `decorated_definition` in the Python query and populate
-`decorators`. Test with an `@app.route`-decorated function that is never called
-directly.
+**Fixed 2026-10-24.** Two independent causes, both confirmed against the real
+grammar:
+
+```
+decorated_definition
+  decorator            | @mcp.tool()      | children: ['@', 'call']
+  decorator            | @property        | children: ['@', 'identifier']
+  function_definition  | def h(): ...     | children: ['def','identifier','parameters',':','block']
+```
+
+1. `extract_function` looked for `decorator` children of the
+   `function_definition`. The grammar hangs them off the enclosing
+   `decorated_definition`, so that branch was unreachable dead code.
+2. Even reached, it only assembled `identifier` and `.` children — so
+   `@mcp.tool()` and `@app.route("/x")`, whose child is a `call` node, would
+   still have produced nothing.
+
+Decorators are now read from the parent `decorated_definition` as node text with
+`@` stripped and the argument list cut at the first `(`, which handles all four
+shapes in one line. `is_decorated_entry_point` works as designed again.
+
+**Open question this exposes, to settle in R4:** `FRAMEWORK_DECORATORS` is an
+allowlist that can never be complete — it has no `mcp.tool`, so this project's
+own ten tool functions would be reported dead the moment R4 starts working, and
+every user's `@celery.task` or `@typer.command` has the same problem. The
+inverse rule is both smaller and matches the module's stated preference for
+false negatives: *any* decorator implies something else calls the function,
+except a known set of reachability-neutral ones (`property`, `staticmethod`,
+`classmethod`, `functools.wraps`, `functools.cache`). Deferred to R4, where the
+filter actually runs and can be tested.
 
 ### R8. Decorated functions are parsed twice
 `src/reforge_mcp/scanner/parser.py`

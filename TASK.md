@@ -35,8 +35,8 @@ Order matters: R8 and R7 are parser fixes the rest depend on.
 
 - [x] **R8** Root cause was `id(child)` vs `child.id` — the dedupe set already existed but keyed off Python object ids, and py-tree-sitter mints a new wrapper per access, so it never matched. Two words changed; `server.py` 21 -> 11 functions, duplicate groups 12 -> 1
 - [x] **R8b** Tests in `tests/test_parser.py` — decorated defs counted once, and two same-named defs in one file both survive the dedupe
-- [ ] **R7** Populate `FunctionInfo.decorators` from `decorated_definition`
-- [ ] **R7b** Test: an `@app.route` function never called directly is not reported dead
+- [x] **R7** Decorators now read off the enclosing `decorated_definition`, by node text with the argument list cut off, so `@mcp.tool()` and `@app.route("/x")` both resolve. The old branch looked for `decorator` children of `function_definition`, where the grammar never puts them
+- [x] **R7b** Tests in `tests/test_parser.py` — extraction including stacked and argument-carrying decorators, plus `is_decorated_entry_point` returning True for `@app.route` / `@property` and False for an undecorated function
 - [ ] **R4** Rebuild reference collection on the tree-sitter AST (calls, attributes, bare identifiers); delete the regex path
 - [ ] **R4b** Implement the documented `__all__` exemption
 - [ ] **R4c** Test: instance methods called as `obj.method()` are not reported dead

@@ -270,16 +270,17 @@ class PythonAdapter:
                     name_node = child
                 elif child.type == "block":
                     body_node = child
-                elif child.type == "decorator":
-                    # Extract decorator name (e.g., @app.route -> "app.route")
-                    dec_parts = []
-                    for dec_child in child.children:
-                        if dec_child.type == "identifier":
-                            dec_parts.append(dec_child.text.decode("utf-8"))
-                        elif dec_child.type == ".":
-                            dec_parts.append(".")
-                    if dec_parts:
-                        decorators.append("".join(dec_parts))
+
+            # Decorators hang off the enclosing decorated_definition, never off
+            # the function_definition itself.
+            parent = func_node.parent
+            if parent is not None and parent.type == "decorated_definition":
+                for child in parent.children:
+                    if child.type == "decorator":
+                        # "@app.route('/x')" -> "app.route"; the argument list is
+                        # not part of the name we match against
+                        text = child.text.decode("utf-8").lstrip("@").strip()
+                        decorators.append(text.split("(", 1)[0].strip())
 
             if name_node and body_node:
                 name = name_node.text.decode("utf-8")
