@@ -1,6 +1,6 @@
 [project]
 name = "reforge-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server that automatically cleans up messy vibe-coded repositories"
 readme = "README.md"
 requires-python = ">=3.11"
