@@ -86,7 +86,11 @@ in the same change.
 and the atomic-commit guarantee: unrelated in-flight work gets swept into a
 "refactor" commit.
 
-**Fix:** make `files` required, or return an error when it is omitted.
+**Fixed 2026-10-24.** `files` is now a required argument, rejected when empty,
+and the `add(A=True)` branch is gone. Worth recording: no caller in `src/` and no
+test ever omitted `files`, so this was an unreachable branch that existed only to
+cause damage — the fix was deletion, not a new guard. FastMCP now advertises the
+argument as required, so the tool cannot be called without it.
 
 ---
 

@@ -23,8 +23,8 @@ Blocks the PyPI release. Nothing else ships first.
 - [x] **R1** `apply_diff` verifies every hunk's context and removed lines before mutating; rejects the whole diff on any mismatch
 - [x] **R1b** Regression tests in `tests/test_diff.py` — wrong line numbers, bad context, header/body disagreement and a bad second hunk all leave the file byte-identical
 - [x] **R2** Deleted `_git_stash` / `_git_stash_pop` and their four call sites; the `.bak` copy is the only rollback mechanism. No dirty-file guard needed — the hazard was the stash itself
-- [ ] **R3** `git_commit` errors out when `files` is omitted — never `add(A=True)`
-- [ ] **R12a** `dry_run`: implement it in `write_fix`, or delete the key and its comment from `reforge.toml` today
+- [x] **R3** `files` is now a required, non-empty argument; the `add(A=True)` branch is deleted. No caller or test ever omitted it, so this was dead code, not a used feature
+- [x] **R12a** `dry_run` deleted from `reforge.toml`. Honouring it as shipped (`true`) would have disabled `write_fix` for every user with a config file; honouring it as `false` would contradict the file. Claude already previews by showing the diff before calling the tool
 
 **Exit:** a deliberately bad diff cannot change a byte on disk, and a commit can
 only ever contain the files that were named.

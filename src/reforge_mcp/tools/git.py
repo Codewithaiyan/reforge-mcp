@@ -51,7 +51,7 @@ def _err(msg: str) -> dict[str, Any]:
 
 def git_commit(
     repo_path: str,
-    files: list[str] | None = None,
+    files: list[str],
     message: str | None = None,
     branch: str | None = None,
     create_branch: bool = False,
@@ -60,6 +60,8 @@ def git_commit(
     """
     Stage specific files and create an atomic git commit.
 
+    files must be a non-empty list: a fix commit may only ever contain the files
+    that fix touched, never whatever else happened to be in the working tree.
     Enforces session budget and confirmation checkpoints from reforge.toml.
     Returns {success, commit_hash, branch, files_committed, error}.
     Set confirmed=True to proceed past a confirmation checkpoint.
@@ -72,15 +74,17 @@ def git_commit(
     except SecurityError as e:
         return _err(str(e))
 
+    if not files:
+        return _err("No files given: list the files this commit should contain.")
+
     # Validate each requested file path
-    if files:
-        repo_root = Path(repo_path)
-        for fp in files:
-            full = str(repo_root / fp) if not Path(fp).is_absolute() else fp
-            try:
-                validate_path(full, repo_path)
-            except SecurityError as e:
-                return _err(str(e))
+    repo_root = Path(repo_path)
+    for fp in files:
+        full = str(repo_root / fp) if not Path(fp).is_absolute() else fp
+        try:
+            validate_path(full, repo_path)
+        except SecurityError as e:
+            return _err(str(e))
 
     # Load config
     config = _load_config(repo_path)
@@ -133,18 +137,12 @@ def git_commit(
             return _err(f"Cannot checkout branch '{branch}': {e}")
 
     # Stage files
-    repo_root = Path(repo_path)
     try:
-        if files is None:
-            repo.git.add(A=True)
-        else:
-            relative: list[str] = [
-                str(Path(fp).relative_to(repo_root))
-                if Path(fp).is_absolute()
-                else fp
-                for fp in files
-            ]
-            repo.index.add(relative)
+        relative: list[str] = [
+            str(Path(fp).relative_to(repo_root)) if Path(fp).is_absolute() else fp
+            for fp in files
+        ]
+        repo.index.add(relative)
     except Exception as e:
         return _err(f"Failed to stage files: {e}")
 
@@ -164,7 +162,7 @@ def git_commit(
     except TypeError:
         current_branch = commit.hexsha[:8]
 
-    files_committed = files if files is not None else list(commit.stats.files.keys())
+    files_committed = files
 
     return {
         "success": True,

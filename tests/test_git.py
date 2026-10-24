@@ -89,3 +89,16 @@ class TestGitCommit:
         assert result["success"] is False
         assert result["error"] is not None
         assert result["commit_hash"] is None
+
+    def test_empty_file_list_is_rejected(self, git_repo: Path) -> None:
+        import git as _git
+
+        unrelated = git_repo / "user_work_in_progress.py"
+        unrelated.write_text("do not commit me\n")
+
+        result = git_commit(str(git_repo), files=[], message="refactor: automated fix")
+
+        assert result["success"] is False
+        assert result["error"] is not None
+        # the unrelated file must still be untracked - no sweeping commit happened
+        assert "user_work_in_progress.py" in _git.Repo(str(git_repo)).untracked_files

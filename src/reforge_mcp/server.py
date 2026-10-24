@@ -82,13 +82,13 @@ def write_fix_tool(
 @mcp.tool()
 def git_commit_tool(
     repo_path: str,
-    files: list[str] | None = None,
+    files: list[str],
     message: str | None = None,
     branch: str | None = None,
     create_branch: bool = False,
     confirmed: bool = False,
 ) -> dict[str, Any]:
-    """Create an atomic git commit; enforces session budget and confirmation checkpoints."""
+    """Create an atomic git commit of the named files; enforces session budget and checkpoints."""
     return git_commit(repo_path, files, message, branch, create_branch, confirmed)
 
 
