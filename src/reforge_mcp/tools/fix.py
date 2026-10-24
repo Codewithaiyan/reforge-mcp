@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 from ..utils.diff import apply_diff, rollback
@@ -80,22 +81,33 @@ def write_fix(
         if argv:
             test_output = f"Test command not found: {argv[0]}"
     else:
-        try:
-            proc = subprocess.run(
-                [executable, *argv[1:]],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=repo_root,
-            )
-            test_output = proc.stdout + proc.stderr
-            passed = proc.returncode == 0
-        except subprocess.TimeoutExpired:
-            passed = False
-            test_output = "Test command timed out"
-        except (subprocess.SubprocessError, OSError) as e:
-            passed = False
-            test_output = str(e)
+        # Output goes to a file rather than a pipe, and stdin is closed. Both
+        # matter for a command we do not control: a test runner that leaves a
+        # grandchild holding an inherited pipe makes the communicate() after a
+        # timeout block forever - the timeout kills the child, not the pipe -
+        # and an inherited stdin lets anything that prompts wait for input that
+        # will never arrive. Either one hangs write_fix with no way out.
+        with tempfile.TemporaryFile() as out:
+            note = ""
+            try:
+                proc = subprocess.run(
+                    [executable, *argv[1:]],
+                    stdin=subprocess.DEVNULL,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    timeout=120,
+                    cwd=repo_root,
+                )
+                passed = proc.returncode == 0
+            except subprocess.TimeoutExpired:
+                passed = False
+                note = "\nTest command timed out after 120s"
+            except (subprocess.SubprocessError, OSError) as e:
+                passed = False
+                note = f"\n{e}"
+
+            out.seek(0)
+            test_output = out.read().decode("utf-8", "replace") + note
 
     if passed:
         bak.unlink(missing_ok=True)

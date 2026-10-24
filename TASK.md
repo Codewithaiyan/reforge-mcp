@@ -13,7 +13,7 @@ restate them here.
 
 **Status:** M0, M1, M2 and M3 complete. M4 (the README rewrite) is all that remains.
 Baseline 2026-10-24 at `7039af9` — 50 tests pass, 1 Windows-only failure.
-Now **111 pass, 1 skipped, 0 failed**.
+Now **111 pass, 1 skipped, 0 failed** in 4.6s.
 
 Self-scan at this point: 4 dead-code findings (all genuine), 0 duplicate groups,
 24 dependency edges, 3 god files, health score 82.8.
@@ -77,6 +77,10 @@ function nothing calls.
 
 **Exit:** green suite on all three platforms; no security claim in the README
 that a test does not cover.
+
+## M3b — Found by CI
+
+- [x] **R23** `write_fix` could hang forever on a test command despite its timeout: pipes outlive the timeout (the post-`TimeoutExpired` `communicate()` has none of its own) and stdin was inherited. Output now goes to a temp file and stdin is `DEVNULL`. The end-to-end tests gate on `python check.py` instead of nesting the real pytest, which is what exposed it
 
 ## M4 — Ship honestly
 

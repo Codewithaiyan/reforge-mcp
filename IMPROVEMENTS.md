@@ -549,6 +549,47 @@ Windows. Not worth that risk for consistent-looking output. If it is wanted
 later it has to be one change in `parse_file` plus the resolver, proven by the
 Windows CI column this item just added.
 
+### R23. `write_fix` can hang forever on a test command, timeout notwithstanding
+`src/reforge_mcp/tools/fix.py`
+
+**Found by CI, not by the review.** The first run of the new Windows matrix
+(R17) sat in "Run tests" for **32 minutes** while both ubuntu jobs passed in 35
+seconds. Locally the same suite is under 7 seconds on Windows 11. The jobs were
+cancelled rather than left to burn an hour of runner time.
+
+The trigger was three end-to-end tests shelling out to the real `pytest` binary
+as their gating command. The underlying defect is in the product, and the
+`timeout=120` gives false comfort against both halves of it:
+
+- **Pipes outlive the timeout.** `capture_output=True` means `subprocess.run`
+  waits for EOF on the pipes. The timeout kills the direct child, not a
+  grandchild that inherited the pipe, and the `communicate()` that `run()`
+  performs after `TimeoutExpired` has **no timeout of its own** - so it blocks
+  for as long as anything holds the write end.
+- **stdin was inherited.** Any command that prompts - a git credential prompt,
+  an `npm` confirmation, a stray `pdb` - waits on input that will never arrive.
+
+Both are fixed: output is captured to a `tempfile.TemporaryFile` instead of a
+pipe, so there is no pipe to hold open, and `stdin=subprocess.DEVNULL` closes
+the input. This is worth having independently of CI: a user whose `test_command`
+leaves a background process running would have hung `write_fix` with no way out
+on any platform.
+
+The tests now gate on `python check.py`, a script in the fixture repo that
+imports the project's own module and asserts on it. That keeps the end-to-end
+meaning - a command exercising real project code decides whether the fix stays -
+while removing the nested test runner. Suite time went from 6.7s to 4.6s.
+
+A side note that is its own small reassurance: the first attempt used
+`python -c "import calc; assert calc.add(2, 2) == 4"` and was refused, because
+`validate_test_command` saw the semicolon and called it command chaining. The
+injection guard works.
+
+One nested-runner call is kept on purpose -
+`test_default_allowlist_permits_a_documented_runner` runs `pytest --version` -
+because nothing else proves the default allowlist resolves a real runner. If
+Windows CI hangs again, that single test is the suspect.
+
 ---
 
 ## P3 — Polish and credibility

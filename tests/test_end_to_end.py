@@ -4,6 +4,10 @@ End-to-end test of the tool chain Claude actually drives.
 scan_repo -> get_chunk -> write_fix -> git_commit, on a real git repo with a
 real defect, plus the two paths where the fix must be undone. The bad-diff case
 here is the one that would have caught the applier silently corrupting files.
+
+The gating command imports the project's own module rather than shelling out to
+pytest. Nesting the full test runner hung Windows CI indefinitely, and a command
+that exercises calc.add directly proves the same thing in milliseconds.
 """
 
 from pathlib import Path
@@ -45,6 +49,18 @@ REMOVE_DEAD_CODE = (
 # changes add() so test_add fails
 BREAK_ADD = "@@ -2,1 +2,1 @@\n-    return a + b\n+    return a - b\n"
 
+CHECK = """import calc
+
+assert calc.add(2, 2) == 4
+"""
+
+# Exercises the project's own code and exits in milliseconds. Shelling out to
+# the real pytest here hung Windows CI indefinitely. It lives in a file rather
+# than a -c one-liner because an inline "import calc; assert ..." contains a
+# semicolon, which validate_test_command correctly refuses as command chaining.
+CHECK_ADD = "python check.py"
+ALLOW_PYTHON = ["python"]
+
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
@@ -54,12 +70,13 @@ def project(tmp_path: Path) -> Path:
     repo_path.mkdir()
     (repo_path / "calc.py").write_text(CALC)
     (repo_path / "test_calc.py").write_text(TEST_CALC)
+    (repo_path / "check.py").write_text(CHECK)
 
     repo = _git.Repo.init(str(repo_path))
     with repo.config_writer() as cw:
         cw.set_value("user", "name", "Test User")
         cw.set_value("user", "email", "test@example.com")
-    repo.index.add(["calc.py", "test_calc.py"])
+    repo.index.add(["calc.py", "test_calc.py", "check.py"])
     repo.index.commit("init")
     return repo_path
 
@@ -80,7 +97,8 @@ def test_scan_fix_commit(project: Path) -> None:
         str(project / "calc.py"),
         REMOVE_DEAD_CODE,
         repo_root=str(project),
-        test_command="pytest",
+        test_command=CHECK_ADD,
+        allowed_test_commands=ALLOW_PYTHON,
     )
     assert fix["success"] is True, fix
     assert fix["rolled_back"] is False
@@ -108,12 +126,13 @@ def test_failing_tests_undo_the_fix(project: Path) -> None:
         str(project / "calc.py"),
         BREAK_ADD,
         repo_root=str(project),
-        test_command="pytest",
+        test_command=CHECK_ADD,
+        allowed_test_commands=ALLOW_PYTHON,
     )
 
     assert fix["success"] is False
     assert fix["rolled_back"] is True
-    assert "test_add" in fix["test_output"]
+    assert "AssertionError" in fix["test_output"]
     assert (project / "calc.py").read_text() == original
 
 
@@ -151,7 +170,8 @@ def test_no_backup_files_are_left_behind(project: Path) -> None:
         str(project / "calc.py"),
         REMOVE_DEAD_CODE,
         repo_root=str(project),
-        test_command="pytest",
+        test_command=CHECK_ADD,
+        allowed_test_commands=ALLOW_PYTHON,
     )
 
     assert list(project.glob("*.bak")) == []
