@@ -522,7 +522,8 @@ had been configured. The venv bought nothing on an isolated runner, so both
 steps are gone.
 
 **Path normalisation deliberately dropped** (was the second half of this item).
-It is cosmetic: `srceforge_mcp\parser.py` is the native form on Windows and
+It is cosmetic: `src
+It is cosmetic: a backslash-separated path is the native form on Windows and
 `get_chunk` accepts it. Against that, `_resolve_import_to_file` builds its
 candidate paths with `os.sep` to match `ParseResult.file`, so normalising one
 without the other would silently return the dependency graph to zero edges on
