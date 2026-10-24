@@ -133,3 +133,29 @@ def test_js_import_across_directories_with_extension(tmp_path: Path) -> None:
     )
 
     assert ("main.js", "protocol.js") in edge_names(graph(tmp_path))
+
+
+def test_commonjs_require_resolves(tmp_path: Path) -> None:
+    (tmp_path / "fake_page.js").write_text(
+        "function makePage() { return 1; }\nmodule.exports = { makePage };\n"
+    )
+    (tmp_path / "golden_check.js").write_text(
+        "const { makePage } = require('./fake_page');\n\nmakePage();\n"
+    )
+
+    assert ("golden_check.js", "fake_page.js") in edge_names(graph(tmp_path))
+
+
+def test_require_of_a_package_is_not_an_edge(tmp_path: Path) -> None:
+    # a bare specifier is node_modules, not a file in this repo
+    (tmp_path / "express.js").write_text("export const x = 1;\n")
+    (tmp_path / "server.js").write_text("const express = require('express');\n")
+
+    assert edge_names(graph(tmp_path)) == set()
+
+
+def test_a_one_string_call_that_is_not_require_is_ignored(tmp_path: Path) -> None:
+    (tmp_path / "helper.js").write_text("export const x = 1;\n")
+    (tmp_path / "main.js").write_text("console.log('./helper.js');\nfetch('./x');\n")
+
+    assert edge_names(graph(tmp_path)) == set()

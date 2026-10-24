@@ -648,6 +648,11 @@ class JavaScriptAdapter:
                 )
                 source: (string) @source
             ) @import
+
+            (call_expression
+                function: (identifier)
+                arguments: (arguments (string))
+            ) @require
             """,
         )
 
@@ -771,6 +776,30 @@ class JavaScriptAdapter:
                             language=self._name,
                         )
                     )
+            elif capture_name == "require":
+                # The query matches every one-string call, so the callee is
+                # checked here: captures() does not apply an (#eq?) predicate.
+                callee = node.child_by_field_name("function")
+                if callee is None or callee.text.decode("utf-8") != "require":
+                    continue
+                args = node.child_by_field_name("arguments")
+                if args is None:
+                    continue
+                for arg in args.children:
+                    if arg.type == "string":
+                        imports.append(
+                            ImportInfo(
+                                # destructured names are already in references;
+                                # the dependency graph only needs the module
+                                names=("*",),
+                                from_module=arg.text.decode("utf-8")[1:-1],
+                                file=file_path,
+                                line=node.start_point[0] + 1,
+                                language=self._name,
+                            )
+                        )
+                        break
+
 
         total_lines = source.count(b"\n") + 1
 

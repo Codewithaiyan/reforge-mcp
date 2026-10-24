@@ -390,7 +390,7 @@ def _build_dependency_graph(
             if not module or module == "*":
                 continue
             target = _resolve_import_to_file(
-                module, Path(result.file).parent, all_files
+                module, Path(result.file).parent, all_files, result.language
             )
             if target is not None and target != result.file:
                 imported_files.append(target)
@@ -458,7 +458,7 @@ def _count_unscanned_sources(root: Path, ignore_dirs: set[str]) -> dict[str, int
 
 
 def _resolve_import_to_file(
-    import_path: str, current_dir: Path, known_files: set[str]
+    import_path: str, current_dir: Path, known_files: set[str], language: str = ""
 ) -> str | None:
     """
     Resolve an import to one of the files we parsed, or None for an external one.
@@ -484,6 +484,10 @@ def _resolve_import_to_file(
             if remainder:
                 base = base.joinpath(*remainder.split("."))
     else:
+        # In JS/TS a bare specifier is a node_modules package, never a sibling
+        # file, so require("express") must not resolve to a local express.js.
+        if language in ("javascript", "typescript"):
+            return None
         base = current_dir.joinpath(*import_path.split("."))
 
     # str(base) first: a browser ES module must name its extension

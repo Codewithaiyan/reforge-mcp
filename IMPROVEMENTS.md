@@ -811,3 +811,23 @@ and cross-directory forms.
 **Still missing:** CommonJS `require('./x')` is not captured as an import at all
 (the JS query matches `import_statement` only), and `<script src=...>` tags are
 not read. A Node repo written with `require` therefore still shows no edges.
+
+## R29 — a bare JS specifier resolved to a sibling file
+
+**Evidence:** found by a test written for R28's `require` support, not by a
+report. `require("express")` in a repo that also contains `express.js` produced
+an edge `server.js -> express.js`, a dependency the code does not have.
+
+**Root cause:** the resolver's final branch treats any non-relative import as a
+Python dotted module path, `current_dir.joinpath(*import_path.split("."))`. That
+is right for Python, where `import sibling` does mean the file next door, and
+wrong for JS, where a bare specifier always means node_modules.
+
+**Resolution:** `_resolve_import_to_file` now takes the importing file's
+language and returns None for a bare JavaScript or TypeScript specifier. Python
+and Go resolution are untouched.
+
+**Caveat:** the inverse case is unfixed. An intra-repo package import
+("from mypkg.a import b" where mypkg is under src/) still does not resolve -
+see the shortcut comment on the function.
+

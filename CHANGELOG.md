@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.2.2 — 2026-10-24
+
+Re-scan any repository containing JavaScript or TypeScript: 0.2.1 and earlier
+reported an empty dependency graph for most front-end code.
+
+### Fixed
+
+- **An import that names its own extension now resolves.** Candidate paths were
+  built as `base + extension` only, so `import { encode } from './protocol.js'`
+  looked for `protocol.js.py` and `protocol.js.js` and matched nothing. A
+  browser ES module cannot omit the extension, so this lost every edge in a
+  plain front-end project. Python imports are always extensionless, which is why
+  the project's own self-scan never saw it.
+
+- **`require()` is read as an import.** The JavaScript query matched
+  `import_statement` only, so a CommonJS module's dependencies were invisible.
+
+- **A bare JS specifier is no longer resolved to a sibling file.**
+  `require("express")` resolved to a local `express.js` if one happened to exist,
+  inventing an edge to a file the code never imports. Bare specifiers in JS and
+  TS are now treated as external, which is what they are. Python's dotted
+  resolution is unchanged.
+
+### Not covered
+
+Dynamic `import()`, `<script src=...>` tags, `package.json` `"main"`, and
+tsconfig path mappings. A repo relying on one of those still under-reports.
+
 ## 0.2.1 — 2026-10-24
 
 Both items come from the first report by someone outside this project, who ran
