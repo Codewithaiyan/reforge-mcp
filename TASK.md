@@ -86,10 +86,10 @@ that a test does not cover.
 
 ## M4 — Ship honestly
 
-- [ ] **R18** Rewrite the README against the shipped software (10 tools, no API key, `claude mcp add`, correct `reforge.toml`)
-- [ ] **R18b** Regenerate the sample `scan_repo` output from a real run
-- [ ] **R22** Add a status line to the README while P1 work is open
-- [ ] **R20** Move the four adapters into the existing `adapters/*.py` stubs
+- [x] **R18** README rewritten against the shipped software: 10 tools (table checked against `server.py` programmatically), `claude mcp add`, no API key, correct file-size limit, `.[dev]` install, real test and source layout. Also corrected the example session, which showed `write_fix` creating a new file — it can only patch an existing one
+- [x] **R18b** Sample output is a real run against a four-file demo repo, and generating it is what uncovered R24
+- [x] **R22** Replaced with a Status section. The original premise — "while P1 work is open" — no longer holds, so it now says what is verified and that the JS/TS/Go adapters are far less exercised than Python
+- [-] **R20** Dropped. The stated reason was that our own tool flags the file, which is vanity rather than a defect; moving ~900 lines of working parser risks what R4-R8 just fixed, for no user benefit. Reopen only if it blocks real work
 - [ ] Tag `0.2.0` and publish
 
 **Exit:** every claim in the README is reproducible by a user in five minutes.

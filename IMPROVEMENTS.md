@@ -646,9 +646,32 @@ rather than editing the README to document "scan_repo_tool".
 - The `reforge.toml` reference block does not match the shipped file (R12).
 - Shows `scan_repo` returning clean findings, which the self-scan contradicts.
 
-**Fix:** regenerate the tool table from `server.py`, drop the API-key step, fix
-the install instructions, and do not re-publish sample output until R4/R6/R9 are
-fixed.
+**Fixed 2026-10-24**, once R4/R6/R9 had made honest sample output possible.
+
+- The tool table lists all ten, and a script now checks it against
+  `@mcp.tool(name=...)` in `server.py`: no documented tool is unregistered and
+  no registered tool is undocumented.
+- The `ANTHROPIC_API_KEY` step is gone. It contradicted the security table two
+  sections below it, and the server has never needed one.
+- Install is `claude mcp add reforge -- reforge-mcp`, with the desktop-app JSON
+  kept in a `<details>` block rather than presented as the main path.
+- The file-size limit said 10 MB; it is 500 KB. Checked rather than assumed -
+  `package-lock.json` *is* blocked, by a name check I had initially missed, so
+  that claim stood.
+- Contributing says `pip install -e ".[dev]"`, the clone URL is no longer
+  `your-org`, and the source and test trees match what is on disk.
+- **The example session showed `write_fix` creating `src/shared/pricing.py`.**
+  `write_fix` reads and backs up the target before patching, so it cannot create
+  a file. The example now consolidates into an existing module, which is what
+  the tool can actually do.
+- Sample `scan_repo` output is a real run against a four-file demo repo, and
+  generating it is what found R24.
+
+R22 is folded in as a **Status** section. Its original wording - a warning while
+P1 work was open - no longer applies, so it states what is verified by tests and
+self-scan, and that the JavaScript, TypeScript and Go adapters share the
+machinery but have far less coverage than Python, so their findings are
+indicative.
 
 ### R19. No end-to-end test of the one flow that matters
 `tests/`
@@ -683,9 +706,11 @@ Four adapters, the query strings, the directory walker and the dataclasses in on
 file. The tool flags it as a god file — eating the project's own dog food is free
 credibility.
 
-**Fix:** `adapters/{python,javascript,typescript,golang}.py` already exist as
-7-line stubs. Move each adapter into its matching stub and leave `parser.py` as
-the dataclasses plus `parse_file` / `parse_directory`.
+**Dropped 2026-10-24.** The justification offered above is "eating the project's
+own dog food is free credibility" - which is vanity, not a defect. Moving ~900
+lines of parser that R4, R6, R7, R8 and R24 have just corrected risks real
+regressions for no user-visible gain. The file is four parallel adapters and
+reads fine at its length. Worth doing only if it starts blocking actual work.
 
 ### R21. `embeddings_cache` and `ttl_seconds` are vestigial
 `src/reforge_mcp/utils/state.py:27`, `src/reforge_mcp/server.py:113`
