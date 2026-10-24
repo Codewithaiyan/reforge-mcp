@@ -37,9 +37,10 @@ Order matters: R8 and R7 are parser fixes the rest depend on.
 - [x] **R8b** Tests in `tests/test_parser.py` — decorated defs counted once, and two same-named defs in one file both survive the dedupe
 - [x] **R7** Decorators now read off the enclosing `decorated_definition`, by node text with the argument list cut off, so `@mcp.tool()` and `@app.route("/x")` both resolve. The old branch looked for `decorator` children of `function_definition`, where the grammar never puts them
 - [x] **R7b** Tests in `tests/test_parser.py` — extraction including stacked and argument-carrying decorators, plus `is_decorated_entry_point` returning True for `@app.route` / `@property` and False for an undecorated function
-- [ ] **R4** Rebuild reference collection on the tree-sitter AST (calls, attributes, bare identifiers); delete the regex path
-- [ ] **R4b** Implement the documented `__all__` exemption
-- [ ] **R4c** Test: instance methods called as `obj.method()` are not reported dead
+- [x] **R4** `ParseResult.references` is collected from the AST by a single generic walker shared by all three adapters, skipping each definition's own name plus comments and strings. `find_dead_code` is now set arithmetic and the regex path is gone. Self-scan: 6 findings, all genuine, 0 false positives
+- [x] **R4b** `__all__ = [...]` string contents count as references
+- [x] **R4c** Tests in `tests/test_dead_code.py` (12 cases) — `obj.method()`, docstring and comment mentions, reference-without-call, `__all__`, decorators, dunders, `test_*`
+- [x] **R4d** Decorator policy inverted to a denylist of five reachability-neutral decorators, settling the question R7 raised. `@mcp.tool()`, `@celery.task` and any other unknown framework decorator now imply a caller
 - [ ] **R6** Two-pass `_build_dependency_graph`; resolve relative imports and `__init__.py` packages
 - [ ] **R6b** Test: a known two-file import cycle is detected
 - [ ] **R9** Dedupe duplicate groups; filter trivial bodies and same-base-class overrides
@@ -52,7 +53,7 @@ duplicate groups, and draws a non-empty dependency graph.
 
 Pure subtraction. Safe to do any time, including before M1.
 
-- [ ] **R5** Delete `extract_call_sites`, the unused `call_pattern`, and the duplicate `general_call_pattern` definition
+- [x] **R5** Deleted with R4 — `extract_call_sites`, `call_pattern`, both copies of `general_call_pattern` and the 30-line `FRAMEWORK_DECORATORS` allowlist all went with the rewrite
 - [ ] **R10** Drop `sentence-transformers` and `rich` from `dependencies`; move the former to an optional `semantic` extra if ever needed
 - [ ] **R21** Delete `embeddings_cache` from the state schema and `ttl_seconds` from `write_memory_tool`
 - [ ] **R12b** One config loader with one documented schema; delete every key nothing reads

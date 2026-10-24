@@ -123,11 +123,48 @@ Secondary defects in the same function:
 - The "is it called from another file" check loops all parse results per
   definition — O(defs x files) for what a set membership test answers.
 
-**Fix:** drop the regex approach entirely. The tree-sitter trees are already
-built; add a `call` / `attribute` / `identifier` query per adapter and collect
-referenced names from the AST. That removes the comment problem, the dotted-call
-problem and the self-match problem in one change, and it is the whole reason the
-README argues for AST over regex.
+**Fixed 2026-10-24.** The regex path is gone. `ParseResult` gained a
+`references` field, filled by one generic `_collect_references` walker in
+`parser.py` that all three adapters call — no per-language queries were needed,
+because `identifier` / `property_identifier` / `field_identifier` cover all four
+grammars. The walker skips the first name child of any definition node (the
+self-match bug), skips `comment` and string nodes (the docstring bug), and
+collects `__all__` string contents as references (R4b). `find_dead_code` is now
+set arithmetic over those names, and lost the unused `repo_root` parameter along
+with the O(defs x files) loop.
+
+`dead_code.py`: 405 -> 217 lines, and R5 was deleted as part of it.
+
+**Self-scan: 6 findings, every one genuine, no false positives.**
+
+```
+hash_body               duplicates.py:134   (duplicate of parser._hash_body)
+find_similar_functions  duplicates.py:223   (the R10 stub)
+get_language            parser.py:147,295,550,769  (declared and implemented, never called)
+```
+
+Two false-positive classes showed up on the first run and were fixed before
+this was called done:
+
+- **pytest tests (66 of the original 73 findings).** A runner collects `test_*`
+  by naming convention, so nothing references them. Added to
+  `is_entry_point_name`.
+- **This project's own `@mcp.tool()` functions** — see R4d below.
+
+**R4d: the decorator rule is now a denylist.** R7 flagged that
+`FRAMEWORK_DECORATORS` was an allowlist that could never be complete. Confirmed
+on the first self-scan: all ten `@mcp.tool()` functions were reported dead. The
+30-line allowlist is replaced by `NEUTRAL_DECORATORS` — the five or so
+decorators that change *how* a function is invoked rather than *whether*
+something invokes it (`property`, `staticmethod`, `classmethod`,
+`functools.wraps`, `functools.cache`, `abstractmethod`, `overload`). Any other
+decorator is taken as evidence of a framework caller. This errs toward false
+negatives, which is the trade this module's own docstring asks for, and it
+needs no maintenance as frameworks come and go.
+
+One deliberate consequence: a `@property` that nothing ever reads is now
+reported, where the old allowlist exempted it. That is correct — a property is
+reached by attribute access, which the walker already collects.
 
 ### R5. `extract_call_sites` is 70 lines of code that does nothing
 `src/reforge_mcp/scanner/dead_code.py:177`
@@ -136,9 +173,16 @@ It builds an empty dict, sets `content = None` inside a `try` that cannot fail,
 runs `for func in result.functions: pass`, and returns the empty dict. Nothing in
 `src/` or `tests/` calls it. Dead code inside the dead-code detector.
 
-**Fix:** delete it, along with the now-unused `call_pattern`, and resolve the
-duplicate module-level definition of `general_call_pattern` at line 290 (defined
-*after* its only use — it resolves at call time, which is fragile and confusing).
+**Fixed 2026-10-24 as part of R4.** Deleted with the rest of the regex path:
+`extract_call_sites`, the unused `call_pattern`, both copies of
+`general_call_pattern`, and the `FRAMEWORK_DECORATORS` allowlist.
+
+Postscript worth keeping: the rewritten detector, run on this repo, reports
+`find_similar_functions` and `hash_body` as dead — so the tool now finds the
+same *class* of defect in its own source that R5 was. It cannot demonstrate it
+on `extract_call_sites` itself, because that function no longer exists; the
+equivalent case is covered synthetically by
+`test_definition_is_not_a_reference_to_itself`.
 
 ### R6. Dependency graph resolves zero edges
 `src/reforge_mcp/tools/scan.py` — `_build_dependency_graph`

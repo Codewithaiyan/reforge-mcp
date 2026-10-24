@@ -120,7 +120,7 @@ def scan_repo(
 
     # Detect dead code
     logger.info("Analyzing dead code...")
-    dead_code_results = find_dead_code(parse_results, repo_root=root_path)
+    dead_code_results = find_dead_code(parse_results)
     dead_code = [
         {
             "symbol": info.symbol,

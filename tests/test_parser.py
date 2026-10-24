@@ -76,8 +76,11 @@ def test_decorated_function_is_a_framework_entry_point(tmp_path: Path) -> None:
     by_name = {fn.name: fn for fn in parse_file(f, tmp_path).functions}
 
     assert is_decorated_entry_point(by_name["health"]) is True
-    assert is_decorated_entry_point(by_name["name"]) is True
     assert is_decorated_entry_point(by_name["plain"]) is False
+    # property/staticmethod only change how a method is invoked, not whether
+    # something invokes it, so they do not stand in for a caller
+    assert is_decorated_entry_point(by_name["name"]) is False
+    assert is_decorated_entry_point(by_name["helper"]) is False
 
 
 def test_each_function_is_reported_once_per_definition(tmp_path: Path) -> None:

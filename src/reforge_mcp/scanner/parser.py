@@ -121,6 +121,7 @@ class ParseResult:
         imports: All import statements found
         total_lines: Total lines in the file
         error: Error message if parsing failed, None otherwise
+        references: Every name this file uses rather than defines
     """
 
     file: str
@@ -130,6 +131,7 @@ class ParseResult:
     imports: tuple[ImportInfo, ...]
     total_lines: int
     error: str | None = None
+    references: tuple[str, ...] = ()
 
 
 class LanguageAdapter(Protocol):
@@ -172,6 +174,94 @@ def _run_captures(query: Query, root: "Node") -> list[tuple["Node", str]]:
             pairs.append((node, name))
     pairs.sort(key=lambda x: x[0].start_byte)
     return pairs
+
+
+# Node types whose text names something, in all four grammars.
+_NAME_NODE_TYPES = frozenset(
+    {"identifier", "property_identifier", "field_identifier", "type_identifier"}
+)
+
+# Nodes that introduce a name: their first name child is the definition itself,
+# not a use of it.
+_DEFINITION_NODE_TYPES = frozenset(
+    {
+        "function_definition",
+        "function_declaration",
+        "function_signature",
+        "generator_function_declaration",
+        "method_definition",
+        "method_declaration",
+        "class_definition",
+        "class_declaration",
+        "interface_declaration",
+        "type_alias_declaration",
+    }
+)
+
+# Names inside these are prose or data, not code.
+_OPAQUE_NODE_TYPES = frozenset(
+    {
+        "comment",
+        "string",
+        "template_string",
+        "raw_string_literal",
+        "interpreted_string_literal",
+    }
+)
+
+
+def _string_values(node: "Node") -> list[str]:
+    """Every string literal under a node, with its quotes removed."""
+    out: list[str] = []
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n.type in _OPAQUE_NODE_TYPES:
+            out.append(n.text.decode("utf-8", "replace").strip("\"'` "))
+        else:
+            stack.extend(n.children)
+    return out
+
+
+def _collect_references(root: "Node") -> tuple[str, ...]:
+    """
+    Collect every name this file uses rather than defines.
+
+    Dead-code detection subtracts definitions from this set, so a definition must
+    never count as a reference to itself — counting `def foo(` as a call to `foo`
+    is exactly what made every function look reachable before. Comments and
+    string literals are skipped for the same reason: a docstring mentioning
+    `foo()` is not a use of it.
+    """
+    refs: set[str] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+
+        if node.type in _OPAQUE_NODE_TYPES:
+            continue
+
+        if node.type in _NAME_NODE_TYPES:
+            refs.add(node.text.decode("utf-8", "replace"))
+            continue
+
+        # `__all__ = ["foo"]` is a public export, so those strings are uses.
+        if (
+            node.type == "assignment"
+            and node.children
+            and node.children[0].text == b"__all__"
+        ):
+            refs.update(_string_values(node))
+            continue
+
+        expecting_own_name = node.type in _DEFINITION_NODE_TYPES
+        for child in node.children:
+            if expecting_own_name and child.type in _NAME_NODE_TYPES:
+                expecting_own_name = False
+                continue
+            stack.append(child)
+
+    return tuple(sorted(refs))
 
 
 class PythonAdapter:
@@ -422,6 +512,7 @@ class PythonAdapter:
         return ParseResult(
             file=file_path,
             language="python",
+            references=_collect_references(root),
             functions=tuple(functions),
             classes=tuple(classes),
             imports=tuple(imports),
@@ -649,6 +740,7 @@ class JavaScriptAdapter:
         return ParseResult(
             file=file_path,
             language=self._name,
+            references=_collect_references(root),
             functions=tuple(functions),
             classes=tuple(classes),
             imports=tuple(imports),
@@ -815,6 +907,7 @@ class GoAdapter:
         return ParseResult(
             file=file_path,
             language="go",
+            references=_collect_references(root),
             functions=tuple(functions),
             classes=tuple(classes),
             imports=tuple(imports),
