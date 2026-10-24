@@ -23,7 +23,6 @@ _EMPTY_STATE: dict[str, Any] = {
     "architecture_hypothesis": None,
     "health_history": [],
     "fix_log": [],
-    "embeddings_cache": {},
     "pending_fixes": [],
 }
 

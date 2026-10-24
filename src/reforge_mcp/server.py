@@ -30,7 +30,7 @@ mcp = FastMCP(name="reforge-mcp")
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="scan_repo")
 def scan_repo_tool(
     root_path: str,
     languages: list[str] | None = None,
@@ -46,7 +46,7 @@ def scan_repo_tool(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="get_chunk")
 def get_chunk_tool(
     file_path: str,
     repo_root: str | None = None,
@@ -62,7 +62,7 @@ def get_chunk_tool(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="write_fix")
 def write_fix_tool(
     file_path: str,
     diff_str: str,
@@ -79,7 +79,7 @@ def write_fix_tool(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="git_commit")
 def git_commit_tool(
     repo_path: str,
     files: list[str],
@@ -97,7 +97,7 @@ def git_commit_tool(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="read_memory")
 def read_memory_tool(key: str, repo_path: str) -> dict[str, Any]:
     """
     Read a value from reforge-state.json.
@@ -109,18 +109,16 @@ def read_memory_tool(key: str, repo_path: str) -> dict[str, Any]:
     return {"key": key, "value": state.get(key), "found": found}
 
 
-@mcp.tool()
+@mcp.tool(name="write_memory")
 def write_memory_tool(
     key: str,
     value: Any,
     repo_path: str,
-    ttl_seconds: int | None = None,
 ) -> dict[str, Any]:
     """
     Write a value to reforge-state.json atomically.
 
     Returns {success, key, previous_value}.
-    ttl_seconds is accepted but not enforced (stored as metadata only).
     """
     state = load_state(repo_path)
     previous = state.get(key)
@@ -137,7 +135,7 @@ def write_memory_tool(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="infer_architecture")
 def infer_architecture_tool(repo_path: str) -> dict[str, Any]:
     """
     Infer the architectural pattern of a repository.
@@ -159,7 +157,7 @@ def infer_architecture_tool(repo_path: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="score_risk")
 def score_risk_tool(
     symbol: str,
     file: str,
@@ -180,7 +178,7 @@ def score_risk_tool(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="get_health_score")
 def get_health_score_tool(repo_path: str) -> dict[str, Any]:
     """
     Compute a 0-100 health score from scan metrics and append to health_history.
@@ -196,7 +194,7 @@ def get_health_score_tool(repo_path: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(name="generate_changelog")
 def generate_changelog_tool(repo_path: str) -> dict[str, Any]:
     """Write REFORGE_CHANGES.md from current session state."""
     state = load_state(repo_path)

@@ -590,6 +590,46 @@ One nested-runner call is kept on purpose -
 because nothing else proves the default allowlist resolves a real runner. If
 Windows CI hangs again, that single test is the suspect.
 
+### R24. `import sibling` produced no dependency edge
+`src/reforge_mcp/scanner/parser.py`, `src/reforge_mcp/tools/scan.py`
+
+**Found while generating real sample output for R18**, by building a four-file
+demo repo rather than writing the README's example by hand. The demo contained
+an `auth.py` / `middleware.py` import cycle and the scan reported
+`"circular": []`.
+
+Two causes:
+
+- `_build_dependency_graph` skipped any import with no `from_module`, and a bare
+  `import x` records its module in `names`. So only `from x import y` ever
+  produced an edge. In a flat Python project that is most imports, and it misses
+  the commonest Python cycle of all: two modules importing each other by name.
+- The Python adapter collected every identifier of a bare import statement into
+  one record, which made `import a.b` and `import a, b` produce identical
+  output - `names=('a','b')` for both. Neither could be resolved to a file even
+  once the graph builder looked. It now emits one record per module.
+
+The demo repo now reports `auth.py -> middleware.py -> auth.py`. Four tests
+cover it: bare import edge, bare-import cycle, dotted `import pkg.util`, and
+`import a, b` resolving to two separate edges.
+
+My R6 tests all used `from x import y`, which is why they passed while this was
+broken. Worth remembering: the fixtures agreed with the code because I wrote
+them from the code.
+
+### R25. Exposed tool names did not match the documented ones
+`src/reforge_mcp/server.py`
+
+Every tool function is named `<thing>_tool` to avoid colliding with the
+implementation it imports, and FastMCP derives the tool name from the function
+name - so the names Claude actually sees were `scan_repo_tool`,
+`get_chunk_tool` and so on, while the README, its example session and all the
+prose say `scan_repo` and `get_chunk`.
+
+Fixed in the direction that keeps the docs true and drops a redundant suffix
+from a user-facing API: `@mcp.tool(name="scan_repo")`. Ten one-line changes,
+rather than editing the README to document "scan_repo_tool".
+
 ---
 
 ## P3 — Polish and credibility
@@ -654,7 +694,10 @@ the dataclasses plus `parse_file` / `parse_directory`.
 `write_memory_tool` accepts `ttl_seconds` and documents that it is "accepted but
 not enforced" — an argument that does nothing is worse than no argument.
 
-**Fix:** delete both.
+**Fixed 2026-10-24.** Both deleted. `embeddings_cache` was an always-empty
+state key for the feature R10 removed, and `ttl_seconds` was an argument whose
+own docstring said it was "accepted but not enforced" - worse than no argument,
+since a caller could reasonably expect it to expire something.
 
 ### R22. Version and status say "alpha"; the README reads like 1.0
 

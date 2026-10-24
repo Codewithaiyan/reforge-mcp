@@ -13,7 +13,7 @@ restate them here.
 
 **Status:** M0, M1, M2 and M3 complete. M4 (the README rewrite) is all that remains.
 Baseline 2026-10-24 at `7039af9` — 50 tests pass, 1 Windows-only failure.
-Now **111 pass, 1 skipped, 0 failed** in 4.6s.
+Now **115 pass, 1 skipped, 0 failed** in 4.0s, green on ubuntu and windows x 3.11 and 3.14.
 
 Self-scan at this point: 4 dead-code findings (all genuine), 0 duplicate groups,
 24 dependency edges, 3 god files, health score 82.8.
@@ -59,7 +59,7 @@ Pure subtraction. Safe to do any time, including before M1.
 
 - [x] **R5** Deleted with R4 — `extract_call_sites`, `call_pattern`, both copies of `general_call_pattern` and the 30-line `FRAMEWORK_DECORATORS` allowlist all went with the rewrite
 - [x] **R10** Deleted `find_similar_functions` (the stub) and dropped `sentence-transformers` and `rich` from `dependencies` — neither was imported anywhere. `uv.lock` shed 939 lines; torch and every nvidia package are gone. No optional extra added: nothing needs one until the feature exists
-- [ ] **R21** Delete `embeddings_cache` from the state schema and `ttl_seconds` from `write_memory_tool`
+- [x] **R21** Both deleted — an always-empty cache for the feature R10 removed, and an argument documented as unenforced
 - [x] **R12b** `[scan] ignore` is read correctly, and the five keys nothing read are deleted. No config module was built: two small readers of two different sections is not duplication worth an abstraction, and the defect was a key mismatch, not the lack of a loader
 
 **Exit:** `pip install reforge-mcp` no longer pulls PyTorch; no module ships a
@@ -80,6 +80,8 @@ that a test does not cover.
 
 ## M3b — Found by CI
 
+- [x] **R24** Bare `import sibling` produced no edge at all, so flat repos had no dependency graph and the commonest Python cycle went undetected. Found by generating real README output instead of writing it by hand
+- [x] **R25** Exposed tool names were `scan_repo_tool` etc. while every doc said `scan_repo`. Fixed with `@mcp.tool(name=...)` rather than by documenting the suffix
 - [x] **R23** `write_fix` could hang forever on a test command despite its timeout: pipes outlive the timeout (the post-`TimeoutExpired` `communicate()` has none of its own) and stdin was inherited. Output now goes to a temp file and stdin is `DEVNULL`. The end-to-end tests gate on `python check.py` instead of nesting the real pytest, which is what exposed it
 
 ## M4 — Ship honestly

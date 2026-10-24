@@ -464,23 +464,28 @@ class PythonAdapter:
 
         for node, capture_name in _run_captures(import_query, root):
             if capture_name == "import":
-                # Bare import: import os
-                name_parts = []
+                # Bare import: "import os", "import a.b", "import os, sys".
+                # One record per module: collecting every identifier into a
+                # single record made "import a.b" and "import a, b"
+                # indistinguishable, so neither could be resolved to a file.
                 for child in node.children:
-                    if child.type == "dotted_name":
-                        for name_child in child.children:
-                            if name_child.type == "identifier":
-                                name_parts.append(name_child.text.decode("utf-8"))
-                if name_parts:
-                    imports.append(
-                        ImportInfo(
-                            names=tuple(name_parts),
-                            from_module=None,
-                            file=file_path,
-                            line=node.start_point[0] + 1,
-                            language="python",
+                    if child.type != "dotted_name":
+                        continue
+                    parts = [
+                        c.text.decode("utf-8")
+                        for c in child.children
+                        if c.type == "identifier"
+                    ]
+                    if parts:
+                        imports.append(
+                            ImportInfo(
+                                names=tuple(parts),
+                                from_module=None,
+                                file=file_path,
+                                line=node.start_point[0] + 1,
+                                language="python",
+                            )
                         )
-                    )
             elif capture_name == "from_import":
                 # From import: from os import Path, or from ..pkg.mod import X
                 # Read the module off its named field: picking the first

@@ -378,10 +378,15 @@ def _build_dependency_graph(
 
         imported_files: list[str] = []
         for imp in result.imports:
-            if not imp.from_module:
+            # A bare "import sibling" carries its module in names, not
+            # from_module. Skipping those missed every edge in a flat repo -
+            # including the commonest Python cycle, two modules importing each
+            # other by name.
+            module = imp.from_module or ".".join(imp.names)
+            if not module or module == "*":
                 continue
             target = _resolve_import_to_file(
-                imp.from_module, Path(result.file).parent, all_files
+                module, Path(result.file).parent, all_files
             )
             if target is not None and target != result.file:
                 imported_files.append(target)
