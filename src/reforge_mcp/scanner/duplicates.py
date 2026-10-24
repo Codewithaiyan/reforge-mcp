@@ -5,9 +5,8 @@ Identifies copy-pasted code and near-duplicate implementations by hashing
 normalized function bodies and grouping functions with identical hashes.
 
 HOW IT WORKS:
-1. For each function body:
-   - Strip whitespace and comments (normalize)
-   - Compute SHA256 hash
+1. Each function arrives with body_hash already computed by the parser,
+   which strips whitespace and comments before hashing
 2. Group functions by hash
 3. Flag groups with 2+ members as duplicates
 
@@ -33,7 +32,6 @@ But for a learning project, hash-based detection is:
 - Easy to explain: "same code = same hash"
 """
 
-import hashlib
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
@@ -75,76 +73,29 @@ class DuplicateGroup:
     line_count: int
 
 
-def normalize_code(code: str) -> str:
+def _is_shared_interface_method(
+    locations: list[DuplicateLocation],
+    functions_by_location: dict[tuple[str, int], FunctionInfo],
+    method_names_by_file: dict[str, set[str]],
+) -> bool:
     """
-    Normalize code for duplicate comparison.
+    Is this group several classes implementing one interface method the same way?
 
-    Normalization removes:
-    - Leading/trailing whitespace from each line
-    - Empty lines
-    - Single-line comments (# // /*)
-    - Extra blank lines between statements
+    Four adapters each answering `def get_language(self): return self._language`
+    is conformance to a Protocol, not copy-paste anyone can consolidate.
 
-    This ensures that copy-pasted code with minor formatting differences
-    is detected as a duplicate.
-
-    Example:
-        # These two functions are duplicates:
-        def foo():
-            x = 1
-            return x
-
-        def bar():
-            # Comment added
-            x = 1
-
-            return x
-
-        After normalization, both become:
-        x = 1
-        return x
+    The test is deliberately narrow — every member must be a *method* with a
+    one-line body. A module-level function duplicated across files stays
+    reported however short it is, because that is the case this tool exists to
+    find.
     """
-    lines = code.split("\n")
-    normalized_lines = []
-
-    for line in lines:
-        stripped = line.strip()
-
-        # Skip empty lines
-        if not stripped:
-            continue
-
-        # Skip single-line comments
-        if stripped.startswith(("#", "//")):
-            continue
-
-        # Skip docstring lines (triple quotes on their own line)
-        if stripped.startswith('"""') or stripped.startswith("'''"):
-            continue
-
-        # Skip block comment markers
-        if stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith("*/"):
-            continue
-
-        normalized_lines.append(stripped)
-
-    return "\n".join(normalized_lines)
-
-
-def hash_body(body: str) -> str:
-    """
-    Compute SHA256 hash of a normalized function body.
-
-    Uses normalize_code() to preprocess the body before hashing.
-
-    Why SHA256:
-    - Fast: computed in microseconds
-    - Collision-resistant: effectively impossible for two different
-      function bodies to have the same hash
-    - Standard: available in Python's hashlib without external deps
-    """
-    normalized = normalize_code(body)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    for loc in locations:
+        if loc.name not in method_names_by_file.get(loc.file, set()):
+            return False
+        func = functions_by_location.get((loc.file, loc.line))
+        if func is None or func.end_line - func.start_line > 1:
+            return False
+    return True
 
 
 def find_duplicates(
@@ -171,10 +122,15 @@ def find_duplicates(
     # Group functions by body hash
     # hash -> list of (file, line, name)
     hash_groups: dict[str, list[DuplicateLocation]] = defaultdict(list)
+    functions_by_location: dict[tuple[str, int], FunctionInfo] = {}
+    method_names_by_file: dict[str, set[str]] = defaultdict(set)
 
     for result in parse_results:
         if result.error:
             continue
+
+        for cls in result.classes:
+            method_names_by_file[result.file].update(cls.methods)
 
         for func in result.functions:
             location = DuplicateLocation(
@@ -183,31 +139,30 @@ def find_duplicates(
                 name=func.name,
             )
             hash_groups[func.body_hash].append(location)
+            functions_by_location[(func.file, func.start_line)] = func
 
     # Filter to groups with >= min_duplicates members
     duplicate_groups: list[DuplicateGroup] = []
 
     for body_hash, locations in hash_groups.items():
-        if len(locations) >= min_duplicates:
-            # Estimate line count from first location
-            # (We'd need the actual body to know exactly)
-            first_location = locations[0]
-            # Find the function in parse results to get end_line
-            line_count = 1  # Default
+        if len(locations) < min_duplicates:
+            continue
 
-            for result in parse_results:
-                for func in result.functions:
-                    if func.file == first_location.file and func.start_line == first_location.line:
-                        line_count = func.end_line - func.start_line + 1
-                        break
+        if _is_shared_interface_method(
+            locations, functions_by_location, method_names_by_file
+        ):
+            continue
 
-            duplicate_groups.append(
-                DuplicateGroup(
-                    hash=body_hash,
-                    locations=tuple(locations),
-                    line_count=line_count,
-                )
+        first = functions_by_location.get((locations[0].file, locations[0].line))
+        line_count = first.end_line - first.start_line + 1 if first else 1
+
+        duplicate_groups.append(
+            DuplicateGroup(
+                hash=body_hash,
+                locations=tuple(locations),
+                line_count=line_count,
             )
+        )
 
     # Sort by number of duplicates (most duplicated first)
     duplicate_groups.sort(key=lambda g: len(g.locations), reverse=True)
@@ -218,34 +173,3 @@ def find_duplicates(
     )
 
     return duplicate_groups
-
-
-def find_similar_functions(
-    parse_results: list[ParseResult],
-    similarity_threshold: float = 0.8,
-) -> list[tuple[FunctionInfo, FunctionInfo, float]]:
-    """
-    Find similar (but not identical) functions using token-based comparison.
-
-    NOTE: This is a placeholder for future enhancement.
-    Current implementation only detects exact duplicates via hash matching.
-
-    For true similarity detection, you would:
-    1. Tokenize each function body
-    2. Compute Jaccard similarity or cosine similarity
-    3. Group functions above threshold
-
-    This is more expensive and requires additional libraries
-    (e.g., scikit-learn for TF-IDF + cosine similarity).
-
-    Args:
-        parse_results: List of ParseResult
-        similarity_threshold: Minimum similarity score (0.0-1.0)
-
-    Returns:
-        List of (func1, func2, similarity_score) tuples
-    """
-    # Placeholder - returns empty list
-    # Full implementation would require embedding models or token-based comparison
-    logger.debug("Similar function detection not implemented (requires embeddings)")
-    return []

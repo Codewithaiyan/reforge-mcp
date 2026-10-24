@@ -11,8 +11,12 @@ restate them here.
 - New findings: add to IMPROVEMENTS.md with the next `R<n>`, then add the line here.
 - Log finished milestones at the bottom.
 
-**Status:** M0 in progress (R1 done). Baseline 2026-10-24 at `7039af9` — 50 tests
-pass, 1 Windows-only failure (R16). Now 60 pass, same 1 failure.
+**Status:** M0 complete. M1 complete bar R15. M2 complete bar R12b.
+Baseline 2026-10-24 at `7039af9` — 50 tests pass, 1 Windows-only failure (R16).
+Now 91 pass, same 1 failure.
+
+Self-scan at this point: 4 dead-code findings (all genuine), 0 duplicate groups,
+24 dependency edges, health score 75.0.
 
 ---
 
@@ -43,7 +47,7 @@ Order matters: R8 and R7 are parser fixes the rest depend on.
 - [x] **R4d** Decorator policy inverted to a denylist of five reachability-neutral decorators, settling the question R7 raised. `@mcp.tool()`, `@celery.task` and any other unknown framework decorator now imply a caller
 - [x] **R6** Two causes, not one: the loop-ordering bug *and* relative imports never being captured by the Python adapter at all. Both fixed; self-scan goes from 0 to 24 correct edges
 - [x] **R6b** Tests in `tests/test_dep_graph.py` (7 cases) — sibling, relative and package imports resolve; external imports do not; a two-file cycle is reported; repeated imports collapse to one edge
-- [ ] **R9** Dedupe duplicate groups; filter trivial bodies and same-base-class overrides
+- [x] **R9** Phantom groups were already gone with R8; the one real-but-unactionable group (three adapters' `get_language`) is now suppressed by a deliberately narrow test — every member must be a one-line *method*. Also deleted `hash_body` + `normalize_code`, a dead second copy of `parser._hash_body`, and replaced the O(groups x functions) `line_count` lookup with an index. Self-scan: 0 groups
 - [ ] **R15** Fix god-file export counts, exclude test paths, move thresholds to config
 
 **Exit:** self-scan finds `extract_call_sites` as dead code, reports 0 phantom
@@ -54,7 +58,7 @@ duplicate groups, and draws a non-empty dependency graph.
 Pure subtraction. Safe to do any time, including before M1.
 
 - [x] **R5** Deleted with R4 — `extract_call_sites`, `call_pattern`, both copies of `general_call_pattern` and the 30-line `FRAMEWORK_DECORATORS` allowlist all went with the rewrite
-- [ ] **R10** Drop `sentence-transformers` and `rich` from `dependencies`; move the former to an optional `semantic` extra if ever needed
+- [x] **R10** Deleted `find_similar_functions` (the stub) and dropped `sentence-transformers` and `rich` from `dependencies` — neither was imported anywhere. `uv.lock` shed 939 lines; torch and every nvidia package are gone. No optional extra added: nothing needs one until the feature exists
 - [ ] **R21** Delete `embeddings_cache` from the state schema and `ttl_seconds` from `write_memory_tool`
 - [ ] **R12b** One config loader with one documented schema; delete every key nothing reads
 

@@ -312,13 +312,30 @@ Only the Python adapter had this pattern; the JS/TS/Go adapters have no
 is down from 12 groups to 1. The survivor is the real case: the four adapters'
 `get_language` methods.
 
-**Fix for what remains:** skip groups whose members are all overrides of the
-same interface method. Note the constraint before reaching for a blanket
-"minimum body size" filter, which was my first instinct: `tests/test_scanner.py`
-depends on a genuine cross-file duplicate whose body is a single
-`return sum(items)`, so filtering every one-line body would hide real
-duplication as well as this noise. Same-name-same-signature across sibling
-classes is the signal to suppress, not body length.
+**Finished 2026-10-24.** The surviving group is suppressed by
+`_is_shared_interface_method`, which is deliberately narrow: every member must
+be a **method** (its name appears in some class's method list in that file)
+*and* have a one-line body. A duplicated module-level function stays reported
+however short it is — that is the case this tool exists to find. Two tests pin
+both sides of that line, including the short cross-file duplicate
+`tests/test_scanner.py` depends on, so over-filtering fails the suite.
+
+Two more defects found while in the file, both now fixed:
+
+- **`hash_body` and `normalize_code` were a dead second implementation** of
+  `parser._hash_body`. The adapters hash through the parser, so this module's
+  entire documented normalization never ran. `_hash_body` does normalize, so the
+  behaviour was right — but 72 lines of it existed twice, and the dead-code
+  detector had already flagged `hash_body`. Deleted. (`normalize_code` was
+  reachable only from `hash_body`, so it was transitively dead — the detector
+  does not chase transitive reachability, which is worth knowing about its
+  output.)
+- **The `line_count` lookup was O(groups x all functions)** with an inner
+  `break` that left the outer loop scanning every remaining file. Replaced by a
+  `(file, line) -> FunctionInfo` index built in the pass that already walks
+  every function.
+
+**Self-scan: 0 duplicate groups**, down from 12.
 
 ### R10. `detect_similar_functions` is a stub, and its dependency costs ~2 GB
 `src/reforge_mcp/scanner/duplicates.py:249`
@@ -328,9 +345,14 @@ embeddings)"`. Meanwhile `sentence-transformers` sits in `[project]
 dependencies` and is imported nowhere — so `pip install reforge-mcp` pulls
 PyTorch for a `logger.debug`. `rich` is also unused.
 
-**Fix:** drop both from `dependencies`. If the embedding path is ever built, add
-`[project.optional-dependencies] semantic = ["sentence-transformers"]` and
-import lazily inside the function.
+**Fixed 2026-10-24.** `find_similar_functions` is deleted and both packages are
+out of `dependencies` — confirmed first that neither is imported anywhere in
+`src/` or `tests/`. `uv.lock` shed **939 lines**; torch and every nvidia CUDA
+package are gone from the resolution.
+
+No optional extra was added. An extra for a feature that does not exist is just
+a slower way to keep the claim; when the embedding path is actually built it can
+declare its own.
 
 ---
 
