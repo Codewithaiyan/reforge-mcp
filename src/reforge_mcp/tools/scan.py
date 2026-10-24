@@ -120,6 +120,8 @@ def scan_repo(
     for result in parse_results:
         languages_detected.add(result.language)
 
+    unscanned = _count_unscanned_sources(root, ignore_dirs)
+
     # Detect dead code
     logger.info("Analyzing dead code...")
     dead_code_results = find_dead_code(parse_results)
@@ -171,6 +173,8 @@ def scan_repo(
             "total_imports": total_imports,
             "total_lines": total_lines,
             "languages_detected": sorted(languages_detected),
+            "unscanned_source_files": sum(unscanned.values()),
+            "unscanned_by_extension": unscanned,
         },
         "dead_code": dead_code,
         "duplicates": duplicates,
@@ -413,6 +417,44 @@ def _build_dependency_graph(
 
 
 _SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go")
+
+# Source files no adapter can read. Counted and reported so a partial scan is
+# never mistaken for a verdict on the whole repository: a seven-file result on a
+# Kotlin and C++ project says nothing about the Kotlin or the C++.
+#
+# A bounded list on purpose. Counting every unparsed file instead would bury the
+# signal under README and lockfile noise, and an extension missing from here is
+# simply not mentioned.
+_UNSUPPORTED_SOURCE_EXTENSIONS = frozenset(
+    {
+        ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh",
+        ".cs", ".java", ".kt", ".kts", ".scala", ".groovy",
+        ".rb", ".php", ".rs", ".swift", ".m", ".mm",
+        ".dart", ".ex", ".exs", ".erl", ".hs", ".ml", ".clj",
+        ".lua", ".pl", ".r", ".jl", ".zig", ".nim",
+        ".sh", ".bash", ".zsh", ".ps1", ".bat",
+        ".vue", ".svelte", ".sql",
+    }
+)
+
+
+def _count_unscanned_sources(root: Path, ignore_dirs: set[str]) -> dict[str, int]:
+    """Count source files, by extension, that no adapter could parse."""
+    counts: dict[str, int] = {}
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        if suffix not in _UNSUPPORTED_SOURCE_EXTENSIONS:
+            continue
+        try:
+            parts = path.relative_to(root).parts
+        except ValueError:
+            continue
+        if any(part in ignore_dirs for part in parts):
+            continue
+        counts[suffix] = counts.get(suffix, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
 def _resolve_import_to_file(

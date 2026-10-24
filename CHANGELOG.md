@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.1 — 2026-10-24
+
+Both items come from the first report by someone outside this project, who ran
+0.2.0 against a mixed Kotlin/C++/Python/JavaScript repository.
+
+### Fixed
+
+- **Methods overriding a base class defined outside your repo are no longer
+  reported as dead code.** `log_message`, `do_GET` and `do_POST` on a
+  `BaseHTTPRequestHandler` subclass were all flagged: the standard library calls
+  them by name when a request arrives, so nothing in the repository references
+  them. The scan cannot see outside the repository, so it no longer claims a
+  method of an externally-derived class is unused. The same bug applied to
+  `render` on a `React.Component` subclass, `get` on a Django `View`, and
+  `unittest.TestCase` helpers.
+
+  Still reported: an unused override of a base class that *is* defined in your
+  repo, because then every call into it is visible. A class with no bases is
+  unaffected.
+
+### Added
+
+- **`scan_repo` now reports the source files it could not read**, as
+  `unscanned_source_files` and `unscanned_by_extension` in the summary. A scan
+  of that repository said `total_files: 7` while silently skipping roughly
+  twenty Kotlin and C++ files, which reads as a verdict on the whole project
+  when it is a report on the web tooling. Adapters still cover Python,
+  JavaScript, TypeScript and Go only — the difference is that the output now
+  says so.
+
 ## 0.2.0 — 2026-10-24
 
 **If you used 0.1.0, re-scan your repositories.** Three of the four analyses
