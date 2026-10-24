@@ -26,8 +26,19 @@ def _parse_hunks(diff_str: str) -> list[dict]:
     return hunks
 
 
+def _same_line(a: str, b: str) -> bool:
+    # shortcut: compare ignoring line endings, so an LF diff applies to a CRLF file;
+    # upgrade to preserving the file's own endings when mixed-ending files show up
+    return a.rstrip("\r\n") == b.rstrip("\r\n")
+
+
 def apply_diff(file_path: str | Path, diff_str: str) -> bool:
-    """Apply a unified diff to a file atomically via .tmp rename. Returns True on success."""
+    """Apply a unified diff to a file atomically via .tmp rename. Returns True on success.
+
+    Rejects the whole diff unless every hunk's context and removed lines match
+    the file at the position the hunk header claims; a mismatched diff must never
+    partially modify the file.
+    """
     path = Path(file_path)
     try:
         original = path.read_text(encoding="utf-8")
@@ -42,21 +53,36 @@ def apply_diff(file_path: str | Path, diff_str: str) -> bool:
     result = list(lines)
     offset = 0
 
-    try:
-        for hunk in hunks:
-            start = hunk["old_start"] - 1 + offset
-            old_count = hunk["old_count"]
-            replacement: list[str] = []
-            for line in hunk["lines"]:
-                if line.startswith("\\"):
-                    continue
-                if line.startswith((" ", "+")):
-                    replacement.append(line[1:])
-                # "-" lines are dropped from output
-            result[start : start + old_count] = replacement
-            offset += len(replacement) - old_count
-    except (IndexError, ValueError):
-        return False
+    for hunk in hunks:
+        old_count = hunk["old_count"]
+        # A zero-count hunk inserts *after* the line in its header, so old_start
+        # is already the 0-based insertion index.
+        start = hunk["old_start"] + offset
+        if old_count:
+            start -= 1
+
+        expected: list[str] = []
+        replacement: list[str] = []
+        for line in hunk["lines"]:
+            if line.startswith("\\"):  # "\ No newline at end of file"
+                continue
+            if line.startswith(" "):
+                expected.append(line[1:])
+                replacement.append(line[1:])
+            elif line.startswith("-"):
+                expected.append(line[1:])
+            elif line.startswith("+"):
+                replacement.append(line[1:])
+
+        if len(expected) != old_count:
+            return False  # header disagrees with its own body
+        if start < 0 or start + old_count > len(result):
+            return False  # hunk points outside the file
+        if not all(_same_line(a, b) for a, b in zip(result[start : start + old_count], expected)):
+            return False  # context does not match the file
+
+        result[start : start + old_count] = replacement
+        offset += len(replacement) - old_count
 
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
