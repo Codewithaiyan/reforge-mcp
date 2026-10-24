@@ -42,6 +42,7 @@ def scan_repo(
     languages: list[str] | None = None,
     include_tests: bool = True,
     max_depth: int = 10,
+    include_references: bool = False,
 ) -> dict[str, Any]:
     """
     Scan a repository and return a structured analysis report.
@@ -128,6 +129,24 @@ def scan_repo(
     for result in parse_results:
         languages_detected.add(result.language)
 
+    # Top-level module of every import, deduped. infer_architecture classifies
+    # from these: a flask import is evidence, a file called app.js is not.
+    imported_modules = sorted(
+        {
+            top
+            for result in parse_results
+            if not result.error
+            for imp in result.imports
+            for top in [
+                (imp.from_module or ".".join(imp.names))
+                .lstrip(".")
+                .split(".")[0]
+                .split("/")[0]
+            ]
+            if top
+        }
+    )
+
     unscanned = _count_unscanned_sources(root, ignore_dirs, tracked)
 
     # Detect dead code
@@ -173,7 +192,7 @@ def scan_repo(
         f"{len(subprojects)} subprojects"
     )
 
-    return {
+    report: dict[str, Any] = {
         "summary": {
             "total_files": total_files,
             "total_functions": total_functions,
@@ -184,6 +203,7 @@ def scan_repo(
             "unscanned_source_files": sum(unscanned.values()),
             "unscanned_by_extension": unscanned,
             "untracked_files_skipped": untracked_skipped,
+            "imported_modules": imported_modules,
         },
         "dead_code": dead_code,
         "duplicates": duplicates,
@@ -191,6 +211,23 @@ def scan_repo(
         "dep_graph": dep_graph,
         "subprojects": subprojects,
     }
+
+    # Off by default: this is one entry per file with every name it uses, which
+    # is large. score_risk asks for it to count references to one symbol.
+    if include_references:
+        report["references_by_file"] = {
+            result.file: list(result.references)
+            for result in parse_results
+            if not result.error
+        }
+        # so score_risk can size the actual file instead of the repo average
+        report["lines_by_file"] = {
+            result.file: result.total_lines
+            for result in parse_results
+            if not result.error
+        }
+
+    return report
 
 
 def _load_ignore_dirs(root: Path) -> set[str]:
@@ -602,6 +639,12 @@ def get_health_score(
     score -= min(20.0, circular_count * 10.0)
     score = max(0.0, round(score, 1))
 
+    # 90/100 from six of 185 files is not a health score for the repository.
+    # Coverage travels with the number so it cannot be read as one.
+    scanned = summary.get("total_files", 0)
+    skipped = summary.get("unscanned_source_files", 0)
+    coverage = round(scanned / max(scanned + skipped, 1), 3)
+
     entry: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "score": score,
@@ -620,8 +663,9 @@ def get_health_score(
         state["health_history"] = state.get("health_history", []) + [entry]
         save_state(state_path, state)
 
-    return {
+    result = {
         "score": score,
+        "coverage": coverage,
         "breakdown": {
             "dead_code_ratio": entry["dead_code_ratio"],
             "duplicate_ratio": entry["duplicate_ratio"],
@@ -630,6 +674,12 @@ def get_health_score(
         },
         "scan_summary": summary,
     }
+    if coverage < 0.5:
+        result["caveat"] = (
+            f"{scanned} of {scanned + skipped} source files were analysed. "
+            f"This score describes those files, not the repository."
+        )
+    return result
 
 
 def _detect_cycles(

@@ -947,3 +947,82 @@ from them would have been wrong.
 
 The lesson is the one from R28 restated: three rounds of inference from summary
 output were worth less than five minutes reading the actual import lines.
+
+## R34 — score_risk never looked at the symbol it was asked about
+
+**Evidence:** first run of this tool against real code, on `parseCommand` in
+MyCam's `protocol.js` - a wire-protocol parser with nine call sites across four
+files, five of them in the golden tests.
+
+```
+parseCommand         -> 29  "safe to fix"
+doesNotExistAnywhere -> 29  "safe to fix"
+""                   -> 29  "safe to fix"
+```
+
+A name that exists nowhere, and the empty string, scored identically to the
+parser. Three defects behind that:
+
+1. **`symbol` was unused.** `inbound_refs` counted *imports of the file*, so
+   the result was a file-level score behind a symbol-level API. For
+   `protocol.js` it also missed `app.js` entirely, which uses `parseCommand`
+   through a `<script>` tag and so has no import edge.
+2. **`has_tests` was fabricated.** Its docstring said "whether a test file
+   references this symbol". It checked whether *any file anywhere in the repo*
+   had "test" in its name. `parseCommand` was credited with coverage because an
+   unrelated `webtest_server.py` existed.
+3. **`lines_changed` was the repo average** whenever the file was not already
+   flagged as a god file, while claiming to be "lines in the symbol's file".
+4. **Path separators changed the answer.** `pc/companion/web/protocol.js`
+   scored 0 inbound refs; the same file with native separators scored 12.
+
+**Resolution:** `scan_repo(..., include_references=True)` now returns
+`references_by_file` and `lines_by_file`, and the risk scorer uses them:
+`inbound_refs` counts files that reference the symbol, `has_tests` requires one
+of those to be a test file, `lines_changed` sizes the real file. Paths are
+normalised. The result carries `basis` ("symbol" or "file") and
+`referenced_by`, so the caller can see what the score was computed from.
+
+The MCP tool now takes `repo_path` instead of a `dep_graph` and `scan_result`,
+since it needs reference data the caller had no way to supply.
+
+After: `parseCommand` -> 48 "fix with caution", referenced by `app.js`,
+`fake_page.js`, `golden_check.js`. `doesNotExistAnywhere` -> 37 with 0 inbound.
+
+**Known-strict:** test detection is by convention, so MyCam's
+`webtest/golden_check.js` is not recognised and `parseCommand` keeps the
+no-tests penalty. That errs toward a higher risk score, which is the safe
+direction for a tool that advises changing code.
+
+## R35 — infer_architecture classified by filename and called a camera app a REST API
+
+**Evidence:** `infer_architecture` on MyCam returned
+`{"pattern": "REST API", "confidence": 0.7}`. It is an Android camera app with
+a C++ PC companion and a small web control UI.
+
+**Root cause:** patterns were scored by substring-matching *file stems*, and
+`_REST_MARKERS` contained `"app"`. A single file named `app.js` produced the
+verdict. Confidence was `ratio * 3 + 0.2`, which turns a 0.167 hit ratio into a
+confident-looking 0.7, and `max()` over the scores always elected a winner even
+when every score was zero.
+
+**Resolution:** classification is now by what the code imports - flask,
+fastapi, django, express for REST; argparse, click, typer for CLI; react, vue,
+svelte for a frontend - which required `summary.imported_modules` to be added to
+the scan output. With no framework import, a repo containing `__init__.py` is a
+"library" and anything else is `"unknown"` at 0.1 rather than a guess. The
+result carries `evidence`: the imports the verdict rests on.
+
+MyCam now reports "CLI tool" from `argparse`, with the hypothesis ending "Based
+on 6 of 175 source files". This project reports "library", evidence `[]`,
+confidence 0.4.
+
+## R36 — get_health_score returned 90/100 for a repository it had barely read
+
+**Evidence:** MyCam scored 90.0, computed from 6 of its 175 source files. Every
+ratio in the score is taken over scanned files, so the unreadable 97% simply
+did not count, and the number read as a verdict on the repository.
+
+**Resolution:** the result carries `coverage`, and below 0.5 a `caveat` naming
+the fraction: "6 of 175 source files were analysed. This score describes those
+files, not the repository." This project scores 85.0 at coverage 1.0, no caveat.

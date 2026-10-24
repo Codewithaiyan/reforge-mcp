@@ -158,19 +158,19 @@ def infer_architecture_tool(repo_path: str) -> dict[str, Any]:
 
 
 @mcp.tool(name="score_risk")
-def score_risk_tool(
-    symbol: str,
-    file: str,
-    dep_graph: dict[str, Any],
-    scan_result: dict[str, Any],
-) -> dict[str, Any]:
+def score_risk_tool(symbol: str, file: str, repo_path: str) -> dict[str, Any]:
     """
     Score the risk of changing a symbol (0 = safe, 100 = very risky).
 
-    Factors: inbound references, test coverage, file size, circular deps.
-    Returns score, per-factor breakdown, and a recommendation string.
+    Factors: files referencing the symbol, whether a test references it, file
+    size, circular deps. Returns score, per-factor breakdown, the files that
+    reference it, and a recommendation string.
+
+    Takes repo_path rather than a dep_graph and scan_result: it needs the
+    per-file reference sets, which scan_repo only returns when asked.
     """
-    return score_risk(symbol, file, dep_graph, scan_result)
+    scan_result = scan_repo(repo_path, include_references=True)
+    return score_risk(symbol, file, scan_result["dep_graph"], scan_result)
 
 
 # ---------------------------------------------------------------------------

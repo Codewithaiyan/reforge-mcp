@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import os
 
-_CLI_MARKERS = {"main", "__main__", "cli", "argparse", "click", "typer", "fire"}
-_REST_MARKERS = {"route", "router", "app", "fastapi", "flask", "django", "starlette", "endpoint", "handler"}
-_LIBRARY_MARKERS = {"setup", "pyproject", "package", "module", "__init__"}
-_WEB_MARKERS = {"component", "render", "jsx", "tsx", "react", "vue", "svelte", "page", "layout"}
+# Classification is by what the code imports, not what its files are called.
+# The filename heuristic this replaced called an Android camera app a "REST API"
+# at 0.7 confidence, because _REST_MARKERS contained "app" and the repo had an
+# app.js. A framework in an import statement is evidence; a filename is not.
+_REST_IMPORTS = {
+    "flask", "fastapi", "django", "starlette", "aiohttp", "bottle", "falcon",
+    "tornado", "sanic", "quart", "connexion", "express", "koa", "hapi",
+    "restify", "fastify", "nest",
+}
+_CLI_IMPORTS = {
+    "argparse", "click", "typer", "fire", "docopt", "optparse", "getopt",
+    "commander", "yargs", "inquirer", "cobra",
+}
+_WEB_IMPORTS = {
+    "react", "preact", "vue", "svelte", "next", "nuxt", "angular", "solid",
+    "lit", "ember", "backbone", "jquery",
+}
 
 
 def infer_architecture(repo_root: str, scan_result: dict) -> dict:
@@ -23,34 +36,33 @@ def infer_architecture(repo_root: str, scan_result: dict) -> dict:
     entry_points = _find_entry_points(all_files, basenames, stems)
     inferred_modules = _find_modules(stems)
 
-    cli_hits = sum(1 for s in stems if any(m in s for m in _CLI_MARKERS))
-    rest_hits = sum(1 for s in stems if any(m in s for m in _REST_MARKERS))
-    lib_hits = sum(1 for s in stems if any(m in s for m in _LIBRARY_MARKERS))
-    web_hits = sum(1 for s in stems if any(m in s for m in _WEB_MARKERS))
-
-    total = max(len(all_files), 1)
-    scores = {
-        "CLI tool": cli_hits / total,
-        "REST API": rest_hits / total,
-        "library": lib_hits / total,
-        "web frontend": web_hits / total,
+    imported = {m.lower() for m in summary.get("imported_modules", [])}
+    evidence = {
+        "REST API": sorted(imported & _REST_IMPORTS),
+        "CLI tool": sorted(imported & _CLI_IMPORTS),
+        "web frontend": sorted(imported & _WEB_IMPORTS),
     }
 
-    is_js = any(lang in ("javascript", "typescript") for lang in languages)
-    is_py = "python" in languages
+    pattern = max(evidence, key=lambda k: len(evidence[k]))
+    matched = evidence[pattern]
 
-    if is_js and not is_py:
-        scores["web frontend"] += 0.2
-    if is_py and not is_js:
-        scores["library"] += 0.05
+    if matched:
+        # one framework import is weak evidence, several is strong; nothing
+        # here is ever certain, so this does not reach 1.0
+        confidence = min(0.9, round(0.5 + 0.1 * len(matched), 2))
+    elif any(os.path.basename(f) == "__init__.py" for f in all_files):
+        # a package with no application framework: importable, not runnable
+        pattern, confidence = "library", 0.4
+    else:
+        pattern, confidence = "unknown", 0.1
 
-    pattern = max(scores, key=lambda k: scores[k])
-    confidence = min(1.0, round(scores[pattern] * 3 + 0.2, 2))
-
-    hypothesis = _build_hypothesis(pattern, entry_points, inferred_modules, languages)
+    hypothesis = _build_hypothesis(
+        pattern, entry_points, inferred_modules, languages, matched, summary
+    )
 
     return {
         "pattern": pattern,
+        "evidence": matched,
         "entry_points": entry_points,
         "inferred_modules": inferred_modules,
         "confidence": confidence,
@@ -93,8 +105,23 @@ def _build_hypothesis(
     entry_points: list[str],
     modules: list[str],
     languages: list[str],
+    evidence: list[str] | None = None,
+    summary: dict | None = None,
 ) -> str:
     lang_str = ", ".join(languages) if languages else "unknown language"
+    if pattern == "unknown":
+        lead = f"No architectural pattern could be inferred from the {lang_str} imports."
+    else:
+        why = f" (from {', '.join(evidence)})" if evidence else ""
+        lead = f"This appears to be a {pattern} written in {lang_str}{why}."
+
+    scanned = (summary or {}).get("total_files", 0)
+    skipped = (summary or {}).get("unscanned_source_files", 0)
+    partial = (
+        f" Based on {scanned} of {scanned + skipped} source files."
+        if skipped and scanned + skipped and scanned / (scanned + skipped) < 0.5
+        else ""
+    )
     ep_str = (
         f"Entry point{'s' if len(entry_points) != 1 else ''}: {', '.join(entry_points[:3])}."
         if entry_points
@@ -105,4 +132,4 @@ def _build_hypothesis(
         if modules
         else ""
     )
-    return f"This appears to be a {pattern} written in {lang_str}. {ep_str} {mod_str}".strip()
+    return f"{lead} {ep_str} {mod_str}{partial}".strip()

@@ -79,3 +79,25 @@ class TestMemory:
         # File should be identical — no duplicate lines appended
         content2 = (tmp_path / ".gitignore").read_text()
         assert content2 == content
+
+
+def test_health_score_reports_coverage_and_caveats_a_partial_scan(tmp_path) -> None:
+    # one readable file beside nine the adapters cannot parse: a bare score
+    # would read as a verdict on the whole repository
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+    for i in range(9):
+        (tmp_path / f"n{i}.kt").write_text("fun x() {}\n")
+
+    h = get_health_score(str(tmp_path), state_path=None)
+
+    assert h["coverage"] == 0.1
+    assert "1 of 10 source files" in h["caveat"]
+
+
+def test_health_score_on_a_fully_readable_repo_has_no_caveat(tmp_path) -> None:
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+
+    h = get_health_score(str(tmp_path), state_path=None)
+
+    assert h["coverage"] == 1.0
+    assert "caveat" not in h

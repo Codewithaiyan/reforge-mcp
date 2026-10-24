@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.2.6 - 2026-10-24
+
+The first time anyone pointed `score_risk`, `infer_architecture` and
+`get_health_score` at real code. All three were wrong.
+
+### Breaking
+
+`score_risk` takes `repo_path` instead of `dep_graph` and `scan_result`. It
+needs per-file reference data the caller had no way to supply.
+
+### Fixed - score_risk never looked at the symbol
+
+Asked about `parseCommand`, a wire-protocol parser with nine call sites, it
+answered "safe to fix". So did a name that exists nowhere, and the empty
+string - all three scored 29.
+
+- `inbound_refs` counted imports of the *file*, so `symbol` went unused. It now
+  counts files that reference the symbol, which also catches a caller that has
+  no import edge at all - MyCam's `app.js` reaches `parseCommand` through a
+  `<script>` tag.
+- `has_tests` claimed to check "whether a test file references this symbol" and
+  actually checked whether any file in the repo had "test" in its name. It now
+  requires a referencing file to be a test.
+- `lines_changed` was the repo average unless the file was already flagged as
+  oversized. It now sizes the real file.
+- Path separators changed the answer: `web/p.js` scored 0 inbound refs where
+  `web\p.js` scored 12.
+
+The result now carries `basis` ("symbol" or "file") and `referenced_by`, so the
+score can be checked rather than trusted. `parseCommand` scores 48, "fix with
+caution".
+
+### Fixed - infer_architecture classified by filename
+
+It called an Android camera app a "REST API" with confidence 0.7, because the
+REST marker list contained "app" and the repo had an `app.js`. Confidence was
+`ratio * 3 + 0.2`, and a winner was always elected even when every score was
+zero.
+
+Classification is now by what the code imports: flask, fastapi, django,
+express for REST; argparse, click, typer for CLI; react, vue, svelte for a
+frontend. With no framework import, a package is a "library" and anything else
+is `"unknown"` at 0.1 confidence instead of a guess. The result carries
+`evidence` - the imports the verdict rests on.
+
+### Fixed - get_health_score reported 90/100 for a repo it had barely read
+
+Every ratio in the score is taken over scanned files, so 169 unreadable Kotlin
+and C++ files did not count and a 6-file scan scored 90. The result now carries
+`coverage`, with a `caveat` below 0.5 naming the fraction.
+
+### Added
+
+- `summary.imported_modules` - the distinct top-level module of every import.
+- `scan_repo(include_references=True)` - adds `references_by_file` and
+  `lines_by_file`. Off by default because it is large.
+
 ## 0.2.5 - 2026-10-24
 
 ### Fixed - a require() with a computed path is read

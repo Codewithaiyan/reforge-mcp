@@ -53,18 +53,36 @@ tests/               one file per module, pytest, no fixtures framework beyond t
   by `get_health_score`, `score_risk` and `infer_architecture`. Changing a key
   means changing all three.
 
-## Known-broken — read before trusting any output
+## Known limits — read before trusting any output
 
-[IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of what does
-not work; [TASK.md](TASK.md) tracks the fixes. Until M0 and M1 are closed:
+[IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of every
+defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
+fixes. R1-R36 are closed as of 0.2.6. What remains true:
 
-- **Do not use this project's own `write_fix` to edit this repository.** It can
-  silently corrupt a file (R1). Use ordinary edits.
-- **Do not treat `scan_repo` output as truth.** Dead-code detection reports
-  nothing ever, duplicates are mostly phantom, and the dependency graph is empty
-  (R4, R9, R6). The health score is derived from those numbers.
-- **`reforge.toml` is mostly ignored**, including `dry_run` (R12). Assume any
-  tool that can write, writes.
+- **Only Python, JavaScript, TypeScript and Go are parsed.** Everything else is
+  counted in `summary.unscanned_source_files` and nothing more. A six-file
+  result on a Kotlin and C++ repo is a report on six files — check `coverage`
+  from `get_health_score` before drawing any conclusion about a repository.
+- **Only git-tracked files are analysed** (R30). A file you have created but not
+  `git add`ed is invisible to a scan.
+- **A `<script src=...>` tag is not an import.** Files sharing browser globals
+  have no edge between them, and `edges: []` can be the correct answer — check
+  `dep_graph.unresolved_relative_imports`, which is the number that means a
+  resolver bug. Dynamic `import()`, `package.json` `"main"` and tsconfig path
+  mappings are also unread.
+- **`score_risk` needs `scan_repo(include_references=True)`.** Without it the
+  score is file-level, not symbol-level, and `basis` in the result says so.
+- **Dead-code detection is name-based and biased toward false negatives.** A
+  repo-wide name collision hides a dead function. Methods of a class deriving
+  from anything outside the repo are exempt entirely (R26), which also exempts
+  same-named plain functions elsewhere.
+- **An exported browser entry point can still be reported as dead code**, since
+  nothing in the repo references a function the HTML calls. Unverified on a real
+  front-end repo; treat dead-code hits in browser scripts as suspect.
+
+Every defect in IMPROVEMENTS.md after R1 was found by running this tool on code
+outside this repository. The test suite has never found one. Prefer a self-scan
+and a scan of an unrelated real repo over adding another fixture.
 
 When you fix one of these, tick its box in TASK.md in the same change.
 

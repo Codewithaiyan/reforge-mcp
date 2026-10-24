@@ -110,3 +110,6 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R31 — a bare import inside a package is external (0.2.3)
 - [x] R32 — report external and unresolved-relative import counts (0.2.4)
 - [x] R33 — read a require() path built with path.join(__dirname, ...) (0.2.5)
+- [x] R34 — make score_risk symbol-aware and its factors honest (0.2.6)
+- [x] R35 — classify architecture from imports, not filenames (0.2.6)
+- [x] R36 — report coverage alongside the health score (0.2.6)
