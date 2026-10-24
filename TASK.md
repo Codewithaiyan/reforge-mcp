@@ -22,7 +22,7 @@ Blocks the PyPI release. Nothing else ships first.
 
 - [x] **R1** `apply_diff` verifies every hunk's context and removed lines before mutating; rejects the whole diff on any mismatch
 - [x] **R1b** Regression tests in `tests/test_diff.py` — wrong line numbers, bad context, header/body disagreement and a bad second hunk all leave the file byte-identical
-- [ ] **R2** Delete `_git_stash` / `_git_stash_pop` from `tools/fix.py`; refuse to patch a dirty target file instead
+- [x] **R2** Deleted `_git_stash` / `_git_stash_pop` and their four call sites; the `.bak` copy is the only rollback mechanism. No dirty-file guard needed — the hazard was the stash itself
 - [ ] **R3** `git_commit` errors out when `files` is omitted — never `add(A=True)`
 - [ ] **R12a** `dry_run`: implement it in `write_fix`, or delete the key and its comment from `reforge.toml` today
 

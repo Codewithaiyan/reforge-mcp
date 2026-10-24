@@ -71,8 +71,13 @@ conflict, worst case the patch lands on content the user never saw while their
 own edits come back as conflict markers. The `.bak` file already provides
 file-level rollback, which is all `write_fix` needs.
 
-**Fix:** delete the stash/pop logic. Net deletion, strictly safer. If pre-flight
-safety is wanted, *refuse* to patch a dirty target file instead of stashing it.
+**Fixed 2026-10-24.** Both helpers and their four call sites deleted; `fix.py`
+went from 133 to 95 lines. The planned dirty-file guard turned out to be
+unnecessary: the hazard was created *by* the stash. Without it, patching a dirty
+file is safe — the `.bak` captures whatever was on disk, so rollback restores the
+user's uncommitted edits rather than HEAD. The two README claims this made false
+(the numbered fix sequence and the "Pre-fix stash" security row) were corrected
+in the same change.
 
 ### R3. `git_commit(files=None)` stages the entire working tree
 `src/reforge_mcp/tools/git.py:135`

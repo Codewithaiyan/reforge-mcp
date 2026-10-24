@@ -214,10 +214,10 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 `write_fix` applies a unified diff atomically:
 
 1. Creates a `.bak` backup of the target file
-2. Best-effort `git stash` before touching the working tree
-3. Parses the diff into hunks and applies them with line-offset tracking
+2. Parses the diff into hunks and checks every hunk's context and removed lines against the file at the position its header claims
+3. Applies the hunks with line-offset tracking — or, if any hunk failed that check, writes nothing at all
 4. Runs the optional test command (validated against the allowlist)
-5. On any failure — diff parse error, test exit ≠ 0 — restores from `.bak` and returns `rolled_back: true`
+5. On any failure — a diff that does not match the file, test exit ≠ 0 — restores from `.bak` and returns `rolled_back: true`
 
 `git_commit` stages only the listed files and creates an atomic commit via GitPython. It reads `session_budget` and `confirm_every` from `reforge.toml` and enforces them: once the session budget is exceeded commits are blocked; at every `confirm_every` checkpoint the tool returns `needs_confirmation: true` and waits for `confirmed: true` before proceeding.
 
@@ -231,7 +231,7 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 | Binary / lock files | `should_skip_file()` blocks binary files, `package-lock.json`, `.yarn.lock`, and files over 10 MB before any processing |
 | Test command injection | `write_fix` validates `test_command` against an explicit allowlist (`pytest`, `python3 -m pytest`, `npm test`, `go test ./...`, etc.) before executing |
 | Atomic state writes | `reforge-state.json` is always written via `.tmp` → `rename` — a crash mid-write leaves an orphaned `.tmp`, not a corrupt file; `startup_tasks()` cleans these on boot |
-| Pre-fix stash | `write_fix` attempts `git stash` before touching the working tree; on rollback the stash is discarded, leaving the repo clean |
+| Mismatched diffs | `apply_diff` rebuilds each hunk's expected old lines from its context and `-` lines and compares them against the file before mutating anything — a stale or wrong diff is rejected whole, leaving the file byte-identical |
 | No network calls | The server makes zero outbound network requests; all analysis is local |
 
 ---

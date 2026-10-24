@@ -8,33 +8,6 @@ from ..utils.diff import apply_diff, rollback
 from ..utils.security import SecurityError, validate_path, validate_test_command
 
 
-def _git_stash(repo_root: str) -> bool:
-    try:
-        r = subprocess.run(
-            ["git", "stash"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return r.returncode == 0 and "No local changes to save" not in r.stdout
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return False
-
-
-def _git_stash_pop(repo_root: str) -> None:
-    try:
-        subprocess.run(
-            ["git", "stash", "pop"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
-
-
 def write_fix(
     file_path: str,
     diff_str: str,
@@ -46,7 +19,7 @@ def write_fix(
     Apply a unified diff to a file and optionally run tests to verify safety.
 
     Returns {success, test_output, error, rolled_back}.
-    Rolls back automatically (via .bak + git stash pop) if tests fail.
+    Rolls back automatically from the .bak copy if tests fail.
     """
     if repo_root is None:
         repo_root = os.getcwd()
@@ -75,14 +48,9 @@ def write_fix(
             "rolled_back": False,
         }
 
-    # Git stash saves any pre-existing dirty state; best-effort, not required
-    stash_created = _git_stash(repo_root)
-
     if not apply_diff(str(resolved), diff_str):
         rollback(str(resolved))
         bak.unlink(missing_ok=True)
-        if stash_created:
-            _git_stash_pop(repo_root)
         return {
             "success": False,
             "test_output": None,
@@ -92,8 +60,6 @@ def write_fix(
 
     if test_command is None:
         bak.unlink(missing_ok=True)
-        if stash_created:
-            _git_stash_pop(repo_root)
         return {"success": True, "test_output": None, "error": None, "rolled_back": False}
 
     try:
@@ -116,15 +82,11 @@ def write_fix(
 
     if passed:
         bak.unlink(missing_ok=True)
-        if stash_created:
-            _git_stash_pop(repo_root)
         return {"success": True, "test_output": test_output, "error": None, "rolled_back": False}
 
     # Tests failed — restore original file
     rollback(str(resolved))
     bak.unlink(missing_ok=True)
-    if stash_created:
-        _git_stash_pop(repo_root)
     return {
         "success": False,
         "test_output": test_output,
