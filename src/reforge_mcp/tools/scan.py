@@ -384,6 +384,8 @@ def _build_dependency_graph(
     all_files: set[str] = {r.file for r in parse_results if not r.error}
 
     file_imports: dict[str, list[str]] = {}
+    external_imports = 0
+    unresolved_relative = 0
 
     for result in parse_results:
         if result.error:
@@ -403,6 +405,13 @@ def _build_dependency_graph(
             )
             if target is not None and target != result.file:
                 imported_files.append(target)
+            elif target is None:
+                # A relative import must point inside the repo, so failing to
+                # resolve one is a defect here. A bare one is a package.
+                if module.startswith("."):
+                    unresolved_relative += 1
+                else:
+                    external_imports += 1
 
         # several imports from one module are one edge
         file_imports[result.file] = list(dict.fromkeys(imported_files))
@@ -422,6 +431,11 @@ def _build_dependency_graph(
         "nodes": nodes,
         "edges": edges,
         "circular": circular,
+        # Imports with no edge read as a broken resolver. These say which:
+        # imports that leave the repo, versus relative ones that should have
+        # resolved and did not.
+        "external_imports": external_imports,
+        "unresolved_relative_imports": unresolved_relative,
     }
 
 

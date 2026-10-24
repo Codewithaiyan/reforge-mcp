@@ -880,3 +880,33 @@ R6, is unchanged.
 a package whose `__init__.py` is empty and therefore unparsed still resolves
 siblings. Implicit namespace packages have no `__init__.py` at all and are not
 detected.
+
+## R32 — an empty dependency graph could not be distinguished from a broken one
+
+**Reported by:** the third external scan, of the same mixed repository on 0.2.3.
+It reported 22 imports and `edges: []`. Both the tester and I read that as
+resolution failing again, as did the previous report ("dep_graph has zero edges,
+which also tells you the import resolution didn't work here"). The same wrong
+inference was drawn three times from three different scans.
+
+**Root cause:** not a resolution bug. `edges: []` is the correct answer for a
+repository whose JavaScript is loaded through `<script>` tags and whose Python
+imports only the standard library: there are no intra-repo imports to find. But
+the output gave no way to tell that apart from a resolver that silently dropped
+22 imports, so a correct result and a broken one printed identically.
+
+R28, R29 and R31 were all genuine resolver defects found while chasing this,
+so the inference was not unreasonable - it just was not supported by the output.
+
+**Resolution:** `dep_graph` now reports `external_imports` (imports that leave
+the repository - stdlib, npm, a vendored package) and
+`unresolved_relative_imports` (a relative import that must point inside the
+repo and did not resolve, which is always a defect here). Zero edges with zero
+unresolved relative imports now reads as "this code has no internal imports",
+not as a failure.
+
+Self-scan: 24 edges, 112 external, 0 unresolved.
+
+**Still true:** a `<script src=...>` tag is not an import anywhere in the AST,
+so files sharing browser globals have no detectable dependency. The counts now
+make that visible instead of implying a bug.

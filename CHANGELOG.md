@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.4 - 2026-10-24
+
+### Added - the dependency graph says why it is empty
+
+A scan reporting 22 imports and `edges: []` was read as a broken resolver three
+times, by two different readers. It was not: for a repository whose JavaScript
+is loaded through `<script>` tags and whose Python imports only the standard
+library, no edges is the correct answer. The output just could not tell that
+apart from a resolver dropping every import on the floor.
+
+`dep_graph` now carries two counts:
+
+- `external_imports` - imports that leave the repository: stdlib, npm, a
+  vendored package. These can never be edges.
+- `unresolved_relative_imports` - a relative import that must point inside the
+  repository and did not resolve. Anything above zero here is a defect in this
+  tool, and worth reporting.
+
+Zero edges alongside zero unresolved relative imports now means "this code has
+no internal imports". This project's own scan reports 24 edges, 112 external,
+0 unresolved.
+
+A `<script src=...>` tag is still not an import anywhere in the AST, so files
+sharing browser globals have no detectable dependency between them. The counts
+make that visible rather than leaving it to look like a bug.
+
 ## 0.2.3 - 2026-10-24
 
 Re-scan anything you scanned with an earlier version. Until now the scan

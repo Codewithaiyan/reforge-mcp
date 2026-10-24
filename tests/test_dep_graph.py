@@ -180,3 +180,28 @@ def test_bare_import_in_a_flat_dir_still_resolves(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("import helper\n\nhelper.helper()\n")
 
     assert ("app.py", "helper.py") in edge_names(graph(tmp_path))
+
+
+def test_zero_edges_from_external_imports_is_reported_as_such(tmp_path: Path) -> None:
+    # browser scripts sharing globals plus a stdlib-only server: no edges is
+    # the right answer, and the counts have to say so
+    (tmp_path / "app.js").write_text("function render() { return 1; }\n")
+    (tmp_path / "server.py").write_text(
+        "from http.server import HTTPServer\nimport json\nimport os\n"
+    )
+
+    g = graph(tmp_path)
+
+    assert g["edges"] == []
+    assert g["external_imports"] == 3
+    assert g["unresolved_relative_imports"] == 0
+
+
+def test_a_relative_import_that_does_not_resolve_is_counted(tmp_path: Path) -> None:
+    (tmp_path / "app.js").write_text("import { x } from './nope.js';\n")
+
+    g = graph(tmp_path)
+
+    assert g["edges"] == []
+    assert g["unresolved_relative_imports"] == 1
+    assert g["external_imports"] == 0
