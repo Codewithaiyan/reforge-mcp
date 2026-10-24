@@ -509,8 +509,26 @@ A tool that edits files, resolves paths and shells out is exactly the kind of
 code that breaks on Windows path separators and CRLF. The self-scan output above
 shows `src\reforge_mcp\...` separators leaking into report payloads.
 
-**Fix:** matrix over ubuntu/macos/windows x 3.11/3.12/3.13. Normalise report
-paths to forward slashes so output is stable across platforms.
+**Fixed 2026-10-24, smaller than planned.** The matrix is 4 jobs:
+ubuntu + windows x 3.11 + 3.14. Windows earns its column because this tool
+resolves paths, rewrites files and shells out. macOS would behave like ubuntu
+here, so it buys runtime rather than cover, and for a pure-Python package with
+no version-gated code the floor and the newest release bracket everything
+between them. Classifiers now claim 3.11 through 3.14.
+
+The old workflow also ran `python -m venv venv` and `. venv/bin/activate`,
+which is bash-only — it could never have run on a Windows runner even if one
+had been configured. The venv bought nothing on an isolated runner, so both
+steps are gone.
+
+**Path normalisation deliberately dropped** (was the second half of this item).
+It is cosmetic: `srceforge_mcp\parser.py` is the native form on Windows and
+`get_chunk` accepts it. Against that, `_resolve_import_to_file` builds its
+candidate paths with `os.sep` to match `ParseResult.file`, so normalising one
+without the other would silently return the dependency graph to zero edges on
+Windows. Not worth that risk for consistent-looking output. If it is wanted
+later it has to be one change in `parse_file` plus the resolver, proven by the
+Windows CI column this item just added.
 
 ---
 

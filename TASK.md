@@ -72,7 +72,8 @@ function nothing calls.
 - [x] **R11** Solved by deletion instead: the counter is a per-repo dict in the server process, so it resets on restart. No `session_id`, no `started_at`, no reset tool — the server process is the session, and the error message's "start a new session" is now literally true
 - [x] **R19** `tests/test_end_to_end.py` — scan finds a real dead function, `get_chunk` reads it, `write_fix` removes it gated on the project's own pytest run, `git_commit` commits only that file, and a rescan shows the defect gone with a clean tree. Plus failing-tests rollback, out-of-range diff, stale-context diff, and no `.bak`/`.tmp` left behind
 - [x] **R16** Skipped behind a probe that actually tries to create a symlink. Suite is now fully green: 103 passed, 1 skipped, 0 failed
-- [ ] **R17** CI matrix: ubuntu/macos/windows x 3.11/3.12/3.13; normalise report paths to forward slashes
+- [x] **R17** CI matrix is 4 jobs — ubuntu + windows x 3.11 + 3.14 (floor and newest). Dropped macOS and the middle versions from the plan: macOS behaves like ubuntu for this code, so it buys runtime not cover. Also replaced the bash-only `. venv/bin/activate` steps, which could never have run on Windows
+- [-] **R17b** Report path normalisation dropped. It is cosmetic, and `_resolve_import_to_file` builds candidates with `os.sep` to match `ParseResult.file`, so changing one without the other would silently break R6 on Windows. If wanted later: normalise once in `parse_file` and in the resolver together, with a Windows test
 
 **Exit:** green suite on all three platforms; no security claim in the README
 that a test does not cover.
