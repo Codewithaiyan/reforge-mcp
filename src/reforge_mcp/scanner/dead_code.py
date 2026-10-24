@@ -172,6 +172,37 @@ def is_entry_point_name(name: str) -> bool:
     return name in ENTRY_POINT_NAMES or name.startswith("test_")
 
 
+def _externally_derived_methods(parse_results: list[ParseResult]) -> set[str]:
+    """
+    Methods of classes that inherit from something outside the scanned repo.
+
+    Those are overrides, and whatever calls them lives in the base class's own
+    code, which this scan cannot see: `do_GET` on a
+    `BaseHTTPRequestHandler` subclass is called by the standard library, and
+    `render` on a `React.Component` subclass by React. Nothing in the repo names
+    them, so without this they are reported dead - which they emphatically are
+    not.
+
+    A class whose bases are all defined in the repo is left alone: the calls
+    into it are visible, so a genuinely unused override stays reportable.
+    """
+    local_classes = {
+        cls.name
+        for result in parse_results
+        if not result.error
+        for cls in result.classes
+    }
+
+    protected: set[str] = set()
+    for result in parse_results:
+        if result.error:
+            continue
+        for cls in result.classes:
+            if any(base not in local_classes for base in cls.bases):
+                protected.update(cls.methods)
+    return protected
+
+
 def find_dead_code(parse_results: list[ParseResult]) -> list[DeadCodeInfo]:
     """
     Find functions that nothing in the parsed files references.
@@ -187,6 +218,8 @@ def find_dead_code(parse_results: list[ParseResult]) -> list[DeadCodeInfo]:
         if result.error:
             continue
         referenced.update(result.references)
+
+    referenced.update(_externally_derived_methods(parse_results))
 
     dead_code: list[DeadCodeInfo] = []
 

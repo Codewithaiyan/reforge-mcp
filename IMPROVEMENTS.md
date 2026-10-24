@@ -630,6 +630,42 @@ Fixed in the direction that keeps the docs true and drops a redundant suffix
 from a user-facing API: `@mcp.tool(name="scan_repo")`. Ten one-line changes,
 rather than editing the README to document "scan_repo_tool".
 
+### R26. Methods overriding an external base class were reported dead
+`src/reforge_mcp/scanner/dead_code.py`, `src/reforge_mcp/scanner/parser.py`
+
+**Found by a user testing 0.2.0 on a repo neither of us wrote** - the first
+report from outside this project. A scan of a camera app flagged `log_message`,
+`do_GET` and `do_POST` on a `BaseHTTPRequestHandler` subclass. All three are
+overrides the standard library calls by name when a request arrives, so nothing
+in the repo references them and a name-based scan calls them dead.
+
+Reproduced exactly, then fixed by the rule the limitation implies: **this scan
+cannot see outside the repository, so it must not claim a method of an
+externally-derived class is unused.** `ClassInfo` now carries its base class
+names (Python `argument_list`, JS/TS `class_heritage`, `module.Base` reduced to
+`Base`), and any class with a base that is not itself defined in the scan has
+its methods treated as referenced.
+
+The rule is deliberately narrow in the other direction: a class whose bases are
+*all* defined in the repo is left alone, because every call into it is visible.
+Verified both ways - the three stdlib overrides are now silent, while an
+`unused_hook` override of a repo-local `Base` is still reported in both the base
+and the child.
+
+This also covers the same bug in other frameworks: `render` on a
+`React.Component` subclass, `get` on a Django `View`, any `unittest.TestCase`
+helper.
+
+The user's two other observations were correct but are not defects:
+
+- **Only 7 of the repo's files were scanned**, because the Kotlin and C++ sources
+  have no adapter. True and documented, but the summary reported `total_files: 7`
+  with nothing to say the rest existed - see R27.
+- **`edges: []` on a set of browser scripts.** Those files load each other
+  through `<script>` tags and globals, which cannot be resolved statically
+  without parsing the HTML. A real limitation rather than a bug, and also a case
+  for R27.
+
 ---
 
 ## P3 — Polish and credibility

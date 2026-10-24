@@ -76,6 +76,7 @@ class ClassInfo:
         end_line: Ending line number (inclusive)
         methods: List of method names defined in the class
         language: Programming language
+        bases: Base class names, by their last dotted part
     """
 
     name: str
@@ -84,6 +85,7 @@ class ClassInfo:
     end_line: int
     methods: tuple[str, ...] = ()
     language: str = ""
+    bases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -221,6 +223,30 @@ def _string_values(node: "Node") -> list[str]:
         else:
             stack.extend(n.children)
     return out
+
+
+def _base_class_names(class_node: "Node") -> tuple[str, ...]:
+    """
+    Base class names of a class definition, by their last dotted part.
+
+    Python keeps them in an `argument_list`, JavaScript and TypeScript in a
+    `class_heritage` clause. `module.Base` comes back as `Base`, which is what
+    dead-code detection compares against the classes defined in the repo.
+    """
+    bases: list[str] = []
+    for child in class_node.children:
+        if child.type not in ("argument_list", "class_heritage"):
+            continue
+        for item in child.children:
+            if item.type in (
+                "identifier",
+                "attribute",
+                "member_expression",
+                "type_identifier",
+            ):
+                text = item.text.decode("utf-8", "replace")
+                bases.append(text.rsplit(".", 1)[-1])
+    return tuple(bases)
 
 
 def _collect_references(root: "Node") -> tuple[str, ...]:
@@ -459,6 +485,7 @@ class PythonAdapter:
                             end_line=end_line,
                             methods=tuple(methods),
                             language="python",
+                            bases=_base_class_names(class_node),
                         )
                     )
 
@@ -704,6 +731,7 @@ class JavaScriptAdapter:
                             end_line=end_line,
                             methods=tuple(methods),
                             language=self._name,
+                            bases=_base_class_names(class_node),
                         )
                     )
 
