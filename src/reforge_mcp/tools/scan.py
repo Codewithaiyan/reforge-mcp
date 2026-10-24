@@ -23,6 +23,7 @@ Unlike regex-based scanning, AST parsing understands code structure:
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -338,30 +339,29 @@ def _build_dependency_graph(
     - Indicates poor architectural boundaries
     - Makes refactoring risky (change ripples through cycle)
     """
-    # Build file -> imports mapping
+    # Collect every parsed file before resolving anything: populating this set
+    # inside the resolution loop meant an import could only ever match a file
+    # seen earlier in iteration order, which is why no edge was ever found.
+    all_files: set[str] = {r.file for r in parse_results if not r.error}
+
     file_imports: dict[str, list[str]] = {}
-    all_files: set[str] = set()
 
     for result in parse_results:
         if result.error:
             continue
 
-        file_path = result.file
-        all_files.add(file_path)
-
-        imported_files = []
+        imported_files: list[str] = []
         for imp in result.imports:
-            # Try to resolve import to a file path
-            # This is simplified - real resolution would need package.json, etc.
-            if imp.from_module:
-                # Convert module path to potential file path
-                potential_path = _resolve_import_to_file(
-                    imp.from_module, Path(result.file).parent
-                )
-                if potential_path and str(potential_path) in all_files:
-                    imported_files.append(str(potential_path))
+            if not imp.from_module:
+                continue
+            target = _resolve_import_to_file(
+                imp.from_module, Path(result.file).parent, all_files
+            )
+            if target is not None and target != result.file:
+                imported_files.append(target)
 
-        file_imports[file_path] = imported_files
+        # several imports from one module are one edge
+        file_imports[result.file] = list(dict.fromkeys(imported_files))
 
     # Build nodes and edges
     nodes = list(all_files)
@@ -381,26 +381,47 @@ def _build_dependency_graph(
     }
 
 
-def _resolve_import_to_file(import_path: str, current_dir: Path) -> Path | None:
-    """
-    Resolve an import path to a potential file path.
+_SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go")
 
-    This is a simplified resolver - a full implementation would:
-    - Check package.json for module resolution
-    - Handle TypeScript path mappings
-    - Handle Python package imports
-    - Check node_modules for external packages
-    """
-    # Try common extensions
-    for ext in ["", ".py", ".js", ".ts", ".tsx", ".jsx"]:
-        potential = current_dir / (import_path + ext)
-        if potential.exists():
-            return potential
 
-    # Try as a package import (import_path/__init__.py)
-    package_init = current_dir / import_path / "__init__.py"
-    if package_init.exists():
-        return package_init
+def _resolve_import_to_file(
+    import_path: str, current_dir: Path, known_files: set[str]
+) -> str | None:
+    """
+    Resolve an import to one of the files we parsed, or None for an external one.
+
+    Matches against the parsed file set rather than touching the filesystem, so
+    resolution does not depend on the process working directory.
+
+    shortcut: no package.json "main", no tsconfig path mappings, and no
+    resolution of absolute intra-repo package imports ("from mypkg.a import b"
+    where mypkg lives under src/) - upgrade when a repo that needs one shows up.
+    """
+    if import_path.startswith("."):
+        if "/" in import_path:
+            # JS/TS path: "./utils", "../lib/thing"
+            base = Path(os.path.normpath(current_dir / import_path))
+        else:
+            # Python relative: "." is this package, ".." the one above it
+            dots = len(import_path) - len(import_path.lstrip("."))
+            base = current_dir
+            for _ in range(dots - 1):
+                base = base.parent
+            remainder = import_path[dots:]
+            if remainder:
+                base = base.joinpath(*remainder.split("."))
+    else:
+        base = current_dir.joinpath(*import_path.split("."))
+
+    candidates = [str(base) + ext for ext in _SOURCE_EXTENSIONS]
+    candidates += [
+        str(base / "__init__.py"),
+        str(base / "index.js"),
+        str(base / "index.ts"),
+    ]
+    for candidate in candidates:
+        if candidate in known_files:
+            return candidate
 
     return None
 

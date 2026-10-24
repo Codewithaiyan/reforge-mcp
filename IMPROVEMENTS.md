@@ -194,9 +194,34 @@ iteration order can never match. Combined with relative-import resolution
 dependency detection, `dep_graph` in every scan report, and the circular-dep
 component of both the health score and `score_risk` are all permanently inert.
 
-**Fix:** two passes — collect `all_files` first, then resolve. Then teach
-`_resolve_import_to_file` about leading-dot relative imports and `__init__.py`
-packages. Add a test asserting a known two-file cycle is found.
+**Fixed 2026-10-24.** The loop-ordering bug was real but it was not the whole
+story — fixing it alone would have changed nothing, because **the Python adapter
+never captured a relative import in the first place**. Two separate defects:
+
+1. The query required `module_name: (dotted_name)`, which does not match
+   `from ..scanner.dead_code import x` — that statement's `module_name` is a
+   `relative_import` node, so the whole statement failed to match and was
+   invisible. Now `[(dotted_name) (relative_import)]`.
+2. The handler picked the *first `dotted_name` child* as the module. In a
+   relative import the first one is the **imported name**, so even a matched
+   statement would have recorded `find_dead_code` as the module and then
+   dropped the record for having no names. Now reads
+   `child_by_field_name("module_name")`.
+
+With imports visible, `_build_dependency_graph` collects `all_files` in its own
+pass first, and `_resolve_import_to_file` resolves against that parsed-file set
+instead of touching the filesystem — so resolution no longer depends on the
+process working directory, which was a latent bug of its own. It handles Python
+relative dots, JS/TS `./` paths, `__init__.py` packages and `index.js`/`index.ts`.
+
+**Self-scan: 0 -> 24 edges, all correct** (`server.py -> scan.py`,
+`dead_code.py -> parser.py`, and so on). `circular` is `[]` because this repo
+genuinely has no cycles; `_detect_cycles` turned out to be correct all along and
+is now proven by a synthetic two-file cycle in the tests.
+
+Downstream: `score_risk`'s circular-dependency factor and the health score's
+`circular_count` now receive real data. The health score reads 75.0 and is for
+the first time computed from inputs that mean something.
 
 ### R7. Decorator extraction returns nothing, so false-positive guards are dead
 `src/reforge_mcp/scanner/parser.py`

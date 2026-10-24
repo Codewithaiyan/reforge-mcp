@@ -41,8 +41,8 @@ Order matters: R8 and R7 are parser fixes the rest depend on.
 - [x] **R4b** `__all__ = [...]` string contents count as references
 - [x] **R4c** Tests in `tests/test_dead_code.py` (12 cases) — `obj.method()`, docstring and comment mentions, reference-without-call, `__all__`, decorators, dunders, `test_*`
 - [x] **R4d** Decorator policy inverted to a denylist of five reachability-neutral decorators, settling the question R7 raised. `@mcp.tool()`, `@celery.task` and any other unknown framework decorator now imply a caller
-- [ ] **R6** Two-pass `_build_dependency_graph`; resolve relative imports and `__init__.py` packages
-- [ ] **R6b** Test: a known two-file import cycle is detected
+- [x] **R6** Two causes, not one: the loop-ordering bug *and* relative imports never being captured by the Python adapter at all. Both fixed; self-scan goes from 0 to 24 correct edges
+- [x] **R6b** Tests in `tests/test_dep_graph.py` (7 cases) — sibling, relative and package imports resolve; external imports do not; a two-file cycle is reported; repeated imports collapse to one edge
 - [ ] **R9** Dedupe duplicate groups; filter trivial bodies and same-base-class overrides
 - [ ] **R15** Fix god-file export counts, exclude test paths, move thresholds to config
 

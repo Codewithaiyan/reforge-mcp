@@ -344,7 +344,7 @@ class PythonAdapter:
             ) @import
 
             (import_from_statement
-                module_name: (dotted_name) @module
+                module_name: [(dotted_name) (relative_import)] @module
             ) @from_import
             """,
         )
@@ -482,16 +482,20 @@ class PythonAdapter:
                         )
                     )
             elif capture_name == "from_import":
-                # From import: from os import Path
-                module_name = None
+                # From import: from os import Path, or from ..pkg.mod import X
+                # Read the module off its named field: picking the first
+                # dotted_name child instead mistakes the *imported name* for the
+                # module whenever the module is relative.
+                module_node = node.child_by_field_name("module_name")
+                module_name = (
+                    module_node.text.decode("utf-8") if module_node is not None else None
+                )
                 import_names = []
 
                 for child in node.children:
-                    if child.type == "dotted_name" and not module_name:
-                        module_name = ".".join(
-                            c.text.decode("utf-8") for c in child.children
-                        )
-                    elif child.type in ("dotted_name", "aliased_import"):
+                    if module_node is not None and child.id == module_node.id:
+                        continue
+                    if child.type in ("dotted_name", "aliased_import"):
                         for name_child in child.children:
                             if name_child.type == "identifier":
                                 import_names.append(name_child.text.decode("utf-8"))
