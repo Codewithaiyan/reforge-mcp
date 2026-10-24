@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.2.4 - 2026-10-24
+## 0.2.5 - 2026-10-24
+
+### Fixed - a require() with a computed path is read
+
+```js
+const P = require(path.join(__dirname, "..", "..", "companion", "web", "protocol.js"));
+```
+
+That is how a Node script references a sibling when it needs an absolute path,
+and it was invisible: the argument is a `path.join` call, not a string literal,
+so 0.2.4 saw no import at all. Two real dependencies in the repository that
+prompted this work were missing from its graph.
+
+`path.join` and `path.resolve` rooted at `__dirname` are now read. A path built
+from a variable is still not followed - guessing at it would invent an edge
+that does not exist.
+
+This also makes the counts above honest. On that repository 0.2.4 would have
+reported zero edges and zero unresolved relative imports, which reads as "this
+code has no internal imports" - and that was false.
 
 ### Added - the dependency graph says why it is empty
 

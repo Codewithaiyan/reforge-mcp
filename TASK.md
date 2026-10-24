@@ -109,3 +109,4 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R30 — analyse only git-tracked files (0.2.3)
 - [x] R31 — a bare import inside a package is external (0.2.3)
 - [x] R32 — report external and unresolved-relative import counts (0.2.4)
+- [x] R33 — read a require() path built with path.join(__dirname, ...) (0.2.5)

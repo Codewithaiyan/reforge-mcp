@@ -205,3 +205,31 @@ def test_a_relative_import_that_does_not_resolve_is_counted(tmp_path: Path) -> N
     assert g["edges"] == []
     assert g["unresolved_relative_imports"] == 1
     assert g["external_imports"] == 0
+
+
+def test_require_of_a_path_join_resolves(tmp_path: Path) -> None:
+    # how a Node script references a sibling when it needs an absolute path
+    web = tmp_path / "web"
+    web.mkdir()
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (web / "protocol.js").write_text("module.exports = { encode: (x) => x };\n")
+    (tools / "check.js").write_text(
+        'const path = require("path");\n'
+        'const P = require(path.join(__dirname, "..", "web", "protocol.js"));\n'
+        "P.encode(1);\n"
+    )
+
+    assert ("check.js", "protocol.js") in edge_names(graph(tmp_path))
+
+
+def test_a_computed_require_path_is_not_guessed(tmp_path: Path) -> None:
+    # the directory comes from a variable: inventing an edge would be worse
+    (tmp_path / "protocol.js").write_text("module.exports = {};\n")
+    (tmp_path / "check.js").write_text(
+        'const path = require("path");\n'
+        "const dir = process.env.WEB_DIR;\n"
+        'const P = require(path.join(dir, "protocol.js"));\n'
+    )
+
+    assert edge_names(graph(tmp_path)) == set()

@@ -910,3 +910,40 @@ Self-scan: 24 edges, 112 external, 0 unresolved.
 **Still true:** a `<script src=...>` tag is not an import anywhere in the AST,
 so files sharing browser globals have no detectable dependency. The counts now
 make that visible instead of implying a bug.
+
+## R33 — a require() with a computed path was invisible
+
+**Evidence:** direct inspection of the repository behind R28-R32, which turned
+out to be checked out locally. Its real intra-repo dependencies are:
+
+```js
+// pc/tools/webtest/fake_page.js and golden_check.js
+const P = require(path.join(__dirname, "..", "..", "companion", "web", "protocol.js"));
+```
+
+Two genuine edges, neither in the graph.
+
+**Root cause:** the require support added in R28 matched
+`(arguments (string))` - a literal argument only. `path.join(...)` is a
+call_expression, so no `ImportInfo` was produced at all and the import was not
+merely unresolved, it was unseen.
+
+**Resolution:** the query now matches any single-argument call and the argument
+is inspected. A string is used directly; `path.join`/`path.resolve` rooted at
+`__dirname` is folded into a relative path (`./../../companion/web/protocol.js`)
+that the existing resolver handles. Anything else - a path built from a variable
+- yields None, because inventing an edge is worse than missing one.
+
+Against the real repository: 2 edges, 22 external, 0 unresolved relative.
+
+**Correction to R32:** R32 concluded that this repository's `edges: []` was the
+correct answer because its JavaScript loads through `<script>` tags. That is
+true of `app.js` and `protocol.js`, which communicate through
+`window.MyCamProtocol` and have no detectable dependency. It was *not* true of
+the two webtest scripts. So R32's diagnostic, shipped to make an empty graph
+legible, would have printed "0 unresolved relative imports" on a repository that
+did have unread internal imports. The counts were right; the conclusion drawn
+from them would have been wrong.
+
+The lesson is the one from R28 restated: three rounds of inference from summary
+output were worth less than five minutes reading the actual import lines.

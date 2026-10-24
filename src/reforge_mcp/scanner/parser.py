@@ -249,6 +249,44 @@ def _base_class_names(class_node: "Node") -> tuple[str, ...]:
     return tuple(bases)
 
 
+def _path_join_to_relative(call: "Node") -> str | None:
+    """
+    Read require(path.join(__dirname, "..", "web", "x.js")) as "./../web/x.js".
+
+    A Node script that needs an absolute path writes a sibling import this way,
+    so the dependency is real even though the argument is computed rather than
+    a literal. Returns None when any part is not __dirname or a string, because
+    guessing at a computed path would invent an edge.
+
+    shortcut: only path.join/path.resolve rooted at __dirname, upgrade when a
+    repo computes a require path some other way.
+    """
+    callee = call.child_by_field_name("function")
+    if callee is None:
+        return None
+    if callee.text.decode("utf-8") not in ("path.join", "path.resolve"):
+        return None
+    args = call.child_by_field_name("arguments")
+    if args is None:
+        return None
+
+    parts: list[str] = []
+    for arg in args.children:
+        if arg.type in ("(", ")", ","):
+            continue
+        text = arg.text.decode("utf-8")
+        if arg.type == "identifier" and text == "__dirname":
+            parts.append(".")
+        elif arg.type == "string":
+            parts.append(text[1:-1])
+        else:
+            return None
+
+    if not parts or parts[0] != ".":
+        return None
+    return "/".join(parts)
+
+
 def _collect_references(root: "Node") -> tuple[str, ...]:
     """
     Collect every name this file uses rather than defines.
@@ -651,7 +689,7 @@ class JavaScriptAdapter:
 
             (call_expression
                 function: (identifier)
-                arguments: (arguments (string))
+                arguments: (arguments)
             ) @require
             """,
         )
@@ -785,20 +823,26 @@ class JavaScriptAdapter:
                 args = node.child_by_field_name("arguments")
                 if args is None:
                     continue
+                module = None
                 for arg in args.children:
                     if arg.type == "string":
-                        imports.append(
-                            ImportInfo(
-                                # destructured names are already in references;
-                                # the dependency graph only needs the module
-                                names=("*",),
-                                from_module=arg.text.decode("utf-8")[1:-1],
-                                file=file_path,
-                                line=node.start_point[0] + 1,
-                                language=self._name,
-                            )
-                        )
+                        module = arg.text.decode("utf-8")[1:-1]
                         break
+                    if arg.type == "call_expression":
+                        module = _path_join_to_relative(arg)
+                        break
+                if module:
+                    imports.append(
+                        ImportInfo(
+                            # destructured names are already in references;
+                            # the dependency graph only needs the module
+                            names=("*",),
+                            from_module=module,
+                            file=file_path,
+                            line=node.start_point[0] + 1,
+                            language=self._name,
+                        )
+                    )
 
 
         total_lines = source.count(b"\n") + 1
