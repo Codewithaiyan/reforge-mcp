@@ -106,3 +106,5 @@ that a test does not cover.
 _Nothing yet — baseline recorded 2026-10-24._
 - [x] R28 — resolve a JS import that names its own extension (0.2.2)
 - [x] R29 — treat a bare JS specifier as external (0.2.2)
+- [x] R30 — analyse only git-tracked files (0.2.3)
+- [x] R31 — a bare import inside a package is external (0.2.3)

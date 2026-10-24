@@ -159,3 +159,24 @@ def test_a_one_string_call_that_is_not_require_is_ignored(tmp_path: Path) -> Non
     (tmp_path / "main.js").write_text("console.log('./helper.js');\nfetch('./x');\n")
 
     assert edge_names(graph(tmp_path)) == set()
+
+
+def test_bare_import_inside_a_package_is_external(tmp_path: Path) -> None:
+    # "from git import Repo" in a package means installed GitPython, not the
+    # git.py sitting next to it
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("from . import scan\n")
+    (pkg / "git.py").write_text("def commit():\n    return 1\n")
+    (pkg / "scan.py").write_text("from git import Repo\n\nRepo('.')\n")
+
+    assert ("scan.py", "git.py") not in edge_names(graph(tmp_path))
+
+
+def test_bare_import_in_a_flat_dir_still_resolves(tmp_path: Path) -> None:
+    # no __init__.py: scripts run from their own directory, so the sibling is
+    # genuinely what "import helper" means
+    (tmp_path / "helper.py").write_text("def helper():\n    return 1\n")
+    (tmp_path / "app.py").write_text("import helper\n\nhelper.helper()\n")
+
+    assert ("app.py", "helper.py") in edge_names(graph(tmp_path))

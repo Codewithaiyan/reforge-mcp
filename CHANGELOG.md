@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.2.3 - 2026-10-24
+
+Re-scan anything you scanned with an earlier version. Until now the scan
+analysed code your repository does not own, and reported findings in it.
+
+### Fixed
+
+- **Only git-tracked files are analysed.** A scan of a repo with a Claude Code
+  skill installed put *every* dead-code finding in untracked
+  `.github/skills/` vendor scripts - code the user did not write and cannot
+  change. Filtering was a fixed list of directory names (`node_modules`,
+  `dist`, ...), which can never cover the next place something gets vendored.
+  Tracked-only replaces that denylist with one rule, and also excludes build
+  output, caches and anything gitignored. A non-git directory still scans
+  everything, so the tool works outside git.
+
+  `summary.untracked_files_skipped` reports how many parseable files this
+  removed, so the filter is visible rather than silent.
+
+- **A bare Python import no longer resolves to a sibling inside a package.**
+  `from git import Repo` resolved to the `git.py` module sitting next to it
+  rather than to installed GitPython, inventing a dependency the code does not
+  have. Any dependency whose name collides with a local module did this. Inside
+  a package the import is now treated as external; a flat directory of scripts,
+  where the sibling genuinely is what the import means, is unchanged.
+
+  Found by this project's own self-scan, which went from 24 edges to 25 right
+  after the fix above.
+
+### Note
+
+A file you have created but not yet `git add`ed is no longer analysed. The rule
+is "analyse what the repository versions"; add the file to see it in a scan.
+
 ## 0.2.2 — 2026-10-24
 
 Re-scan any repository containing JavaScript or TypeScript: 0.2.1 and earlier

@@ -831,3 +831,52 @@ and Go resolution are untouched.
 ("from mypkg.a import b" where mypkg is under src/) still does not resolve -
 see the shortcut comment on the function.
 
+
+## R30 — findings reported in code the repository does not own
+
+**Reported by:** a scan of the same mixed repository after a Claude Code skill
+had been installed into it. 10 of 185 source files were parsed, and *every*
+dead-code finding landed in untracked `.github/skills/impeccable/` vendor
+scripts. The reporter's own summary: "acting on this report would mean
+refactoring vendored skill scripts you don't own, and it says nothing about the
+code that actually matters here."
+
+**Root cause:** the scan walked the directory tree and filtered only by a fixed
+list of directory names (`node_modules`, `dist`, `.venv`, ...). Anything not on
+that list was analysed, whether or not the repository versioned it. The list can
+never be complete - `.github/skills/` did not exist as a convention when it was
+written, and the next vendoring location will not be on it either.
+
+**Resolution:** in a git repository the scan now analyses only files git tracks,
+via `_tracked_files`. That covers vendored code, build output, caches and
+anything gitignored with one rule instead of a growing denylist. A non-git
+directory, or a repo with nothing added yet, still scans everything.
+
+`summary.untracked_files_skipped` reports how many parseable files this removed,
+so the filter is visible rather than silent - the same reasoning as R27.
+
+**Trade-off:** a file created but never `git add`ed is no longer analysed. That
+is deliberate - "analyse what the repo versions" is the predictable rule - but it
+will surprise someone scanning work in progress.
+
+## R31 — a bare Python import resolved to a sibling inside a package
+
+**Evidence:** found by the self-scan immediately after R30, which rose from 24
+edges to 25. The new edge was `tools/scan.py -> tools/git.py`, created by
+`from git import Repo` - the installed GitPython package, not the sibling
+module.
+
+**Root cause:** the resolver treated every non-relative import as a sibling
+lookup. That is right for a flat directory of scripts, where the script's own
+directory is on `sys.path`, and wrong inside a package, where Python 3 absolute
+imports never resolve to the file next door. Any dependency whose distribution
+name collides with a local module name produced a false edge.
+
+**Resolution:** a bare import is treated as external when the importing
+directory contains `__init__.py`. Flat-repo resolution, added deliberately in
+R6, is unchanged.
+
+**Caveat:** the package check looks for `__init__.py` in the parsed file set, so
+a package whose `__init__.py` is empty and therefore unparsed still resolves
+siblings. Implicit namespace packages have no `__init__.py` at all and are not
+detected.

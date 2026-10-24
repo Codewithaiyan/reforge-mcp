@@ -109,6 +109,14 @@ def scan_repo(
         languages=languages,
     )
 
+    # Only analyse what the repository versions - see _tracked_files
+    tracked = _tracked_files(root)
+    untracked_skipped = 0
+    if tracked is not None:
+        kept = [r for r in parse_results if r.file in tracked]
+        untracked_skipped = len(parse_results) - len(kept)
+        parse_results = kept
+
     # Build summary
     total_files = len(parse_results)
     total_functions = sum(len(r.functions) for r in parse_results)
@@ -120,7 +128,7 @@ def scan_repo(
     for result in parse_results:
         languages_detected.add(result.language)
 
-    unscanned = _count_unscanned_sources(root, ignore_dirs)
+    unscanned = _count_unscanned_sources(root, ignore_dirs, tracked)
 
     # Detect dead code
     logger.info("Analyzing dead code...")
@@ -175,6 +183,7 @@ def scan_repo(
             "languages_detected": sorted(languages_detected),
             "unscanned_source_files": sum(unscanned.values()),
             "unscanned_by_extension": unscanned,
+            "untracked_files_skipped": untracked_skipped,
         },
         "dead_code": dead_code,
         "duplicates": duplicates,
@@ -438,7 +447,37 @@ _UNSUPPORTED_SOURCE_EXTENSIONS = frozenset(
 )
 
 
-def _count_unscanned_sources(root: Path, ignore_dirs: set[str]) -> dict[str, int]:
+def _tracked_files(root: Path) -> set[str] | None:
+    """
+    Repo-relative paths that git tracks, or None if that cannot be determined.
+
+    Analysing what the repository does not version means reporting findings in
+    code the user does not own: a vendored dependency, build output, an
+    installed tool's bundled scripts. An external scan of a repo carrying
+    `.github/skills/` reported dead code exclusively in those files.
+
+    None - a non-git directory, or a repo with nothing added yet - scans
+    everything, so the tool still works outside git.
+    """
+    try:
+        from git import GitCommandError, InvalidGitRepositoryError, NoSuchPathError, Repo
+
+        repo = Repo(root, search_parent_directories=False)
+        out = repo.git.ls_files()
+    except (InvalidGitRepositoryError, NoSuchPathError, GitCommandError, OSError):
+        return None
+    except ImportError:
+        return None
+
+    # git reports "/" on every platform; parse results use the native separator
+    # shortcut: a path containing a newline is dropped, which git quotes anyway
+    names = {name.replace("/", os.sep) for name in out.splitlines() if name}
+    return names or None
+
+
+def _count_unscanned_sources(
+    root: Path, ignore_dirs: set[str], tracked: set[str] | None = None
+) -> dict[str, int]:
     """Count source files, by extension, that no adapter could parse."""
     counts: dict[str, int] = {}
     for path in root.rglob("*"):
@@ -452,6 +491,8 @@ def _count_unscanned_sources(root: Path, ignore_dirs: set[str]) -> dict[str, int
         except ValueError:
             continue
         if any(part in ignore_dirs for part in parts):
+            continue
+        if tracked is not None and str(path.relative_to(root)) not in tracked:
             continue
         counts[suffix] = counts.get(suffix, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
@@ -487,6 +528,10 @@ def _resolve_import_to_file(
         # In JS/TS a bare specifier is a node_modules package, never a sibling
         # file, so require("express") must not resolve to a local express.js.
         if language in ("javascript", "typescript"):
+            return None
+        # Inside a package, a bare import is absolute: "from git import Repo"
+        # is the installed GitPython, not the tools/git.py next door.
+        if str(current_dir / "__init__.py") in known_files:
             return None
         base = current_dir.joinpath(*import_path.split("."))
 
