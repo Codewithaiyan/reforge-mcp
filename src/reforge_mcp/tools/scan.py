@@ -486,7 +486,10 @@ def _resolve_import_to_file(
     else:
         base = current_dir.joinpath(*import_path.split("."))
 
-    candidates = [str(base) + ext for ext in _SOURCE_EXTENSIONS]
+    # str(base) first: a browser ES module must name its extension
+    # ("./protocol.js"), so base is already the whole path.
+    candidates = [str(base)]
+    candidates += [str(base) + ext for ext in _SOURCE_EXTENSIONS]
     candidates += [
         str(base / "__init__.py"),
         str(base / "index.js"),

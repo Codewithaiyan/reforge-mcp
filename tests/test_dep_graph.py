@@ -109,3 +109,27 @@ def test_multiple_bare_imports_on_one_line_both_resolve(tmp_path: Path) -> None:
 
     assert ("app.py", "a.py") in edges
     assert ("app.py", "b.py") in edges
+
+
+def test_js_import_with_explicit_extension_resolves(tmp_path: Path) -> None:
+    # A browser ES module must name the extension, so the import path is
+    # already the whole filename - no extension is appended to it.
+    (tmp_path / "protocol.js").write_text("export function encode(x) { return x; }\n")
+    (tmp_path / "app.js").write_text(
+        "import { encode } from './protocol.js';\n\nencode(1);\n"
+    )
+
+    assert ("app.js", "protocol.js") in edge_names(graph(tmp_path))
+
+
+def test_js_import_across_directories_with_extension(tmp_path: Path) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    site = tmp_path / "site"
+    site.mkdir()
+    (web / "protocol.js").write_text("export function encode(x) { return x; }\n")
+    (site / "main.js").write_text(
+        "import { encode } from '../web/protocol.js';\n\nencode(2);\n"
+    )
+
+    assert ("main.js", "protocol.js") in edge_names(graph(tmp_path))

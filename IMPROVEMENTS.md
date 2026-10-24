@@ -782,3 +782,32 @@ A good finish line for v0.2.0: the scanner run on its own repository finds
 `extract_call_sites` as dead code, reports zero phantom duplicates, draws a
 non-empty dependency graph, and a deliberately bad diff cannot change a single
 byte on disk.
+
+## R28 — a JS import that names its extension resolves to nothing
+
+**Reported by:** second external scan of a mixed Kotlin/C++/Python/JavaScript
+repository, v0.2.1. `dep_graph` had 7 nodes, 15 imports and `edges: []`.
+
+**Evidence:** against a fixture copying that repo's shape, `app.js` containing
+`import { encode } from './protocol.js'` produced no edge, while
+`website/js/main.js` containing `'../../pc/companion/web/protocol'` resolved
+correctly.
+
+**Root cause:** `_resolve_import_to_file` built its candidate list as
+`str(base) + ext for ext in _SOURCE_EXTENSIONS`, and never tried `str(base)`
+itself. When the import path already carries its extension, `base` is the whole
+path, so the candidates were `protocol.js.py`, `protocol.js.js`, … and nothing
+matched. The extensionless form worked, which is why the bug survived the self
+scan: Python imports are always extensionless, so this repo could never hit it.
+
+It is the dominant style in exactly the code that reported it — a browser ES
+module cannot omit the extension without an import map — so every edge in a
+plain front-end project was lost.
+
+**Resolution:** `str(base)` is the first candidate. Self-scan is unchanged at 24
+edges; two regression tests in `tests/test_dep_graph.py` cover the same-directory
+and cross-directory forms.
+
+**Still missing:** CommonJS `require('./x')` is not captured as an import at all
+(the JS query matches `import_statement` only), and `<script src=...>` tags are
+not read. A Node repo written with `require` therefore still shows no edges.

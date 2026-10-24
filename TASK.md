@@ -104,3 +104,4 @@ that a test does not cover.
 ## Done
 
 _Nothing yet — baseline recorded 2026-10-24._
+- [x] R28 — resolve a JS import that names its own extension (0.2.2)
