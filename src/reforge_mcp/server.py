@@ -198,8 +198,15 @@ def get_health_score_tool(repo_path: str) -> dict[str, Any]:
 def generate_changelog_tool(repo_path: str) -> dict[str, Any]:
     """Write REFORGE_CHANGES.md from current session state."""
     state = load_state(repo_path)
-    generate_changelog(repo_path, state)
-    return {"success": True, "path": str(os.path.join(repo_path, "REFORGE_CHANGES.md"))}
+    written = generate_changelog(repo_path, state)
+    path = str(os.path.join(repo_path, "REFORGE_CHANGES.md"))
+    if not written:
+        return {
+                "success": False,
+                "path": path,
+            "error": f"Could not write '{path}'",
+        }
+    return {"success": True, "path": path}
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import pytest
 from reforge_mcp.utils.state import (
     cleanup_tmp_files,
     ensure_gitignore,
+    generate_changelog,
     load_state,
     save_state,
 )
@@ -101,3 +102,54 @@ def test_health_score_on_a_fully_readable_repo_has_no_caveat(tmp_path) -> None:
 
     assert h["coverage"] == 1.0
     assert "caveat" not in h
+
+class TestGenerateChangelogOnBadState:
+    """State on disk was not necessarily written by this version."""
+
+    def test_a_history_entry_with_no_score_does_not_raise(self, tmp_path: Path) -> None:
+        assert generate_changelog(str(tmp_path), {"health_history": [{"timestamp": "x"}]})
+        assert "Health score" not in (tmp_path / "REFORGE_CHANGES.md").read_text()
+
+    def test_a_null_score_does_not_raise(self, tmp_path: Path) -> None:
+        assert generate_changelog(str(tmp_path), {"health_history": [{"score": None}]})
+
+    def test_a_string_score_does_not_raise(self, tmp_path: Path) -> None:
+        assert generate_changelog(str(tmp_path), {"health_history": [{"score": "ninety"}]})
+
+    def test_a_fix_log_entry_that_is_not_a_dict_does_not_raise(
+        self, tmp_path: Path
+    ) -> None:
+        assert generate_changelog(str(tmp_path), {"fix_log": ["just a string"]})
+        assert "just a string" in (tmp_path / "REFORGE_CHANGES.md").read_text()
+
+    def test_usable_scores_still_produce_a_signed_delta(self, tmp_path: Path) -> None:
+        state = {"health_history": [{"score": 70.0}, {"score": 85.0}]}
+
+        assert generate_changelog(str(tmp_path), state)
+        text = (tmp_path / "REFORGE_CHANGES.md").read_text()
+        assert "**Health score:** 85.0 (+15.0 from previous scan)" in text
+
+    def test_unusable_entries_are_skipped_when_computing_the_delta(
+        self, tmp_path: Path
+    ) -> None:
+        state = {"health_history": [{"score": 70.0}, {"broken": True}, {"score": 85.0}]}
+
+        assert generate_changelog(str(tmp_path), state)
+        assert "(+15.0 from previous scan)" in (
+            tmp_path / "REFORGE_CHANGES.md"
+        ).read_text()
+
+    def test_a_write_that_fails_returns_false(self, tmp_path: Path) -> None:
+        # it swallowed OSError and returned None, so the MCP tool reported
+        # success for a file that was never written
+        import os
+        import stat
+
+        target = tmp_path / "REFORGE_CHANGES.md"
+        target.write_text("placeholder", encoding="utf-8")
+        os.chmod(target, stat.S_IREAD)
+        try:
+            assert generate_changelog(str(tmp_path), {"pending_fixes": ["x"]}) is False
+            assert target.read_text() == "placeholder"
+        finally:
+            os.chmod(target, stat.S_IWRITE)

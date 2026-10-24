@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.2.8 - 2026-10-24
+
+The last two untested tools, `get_chunk` and `generate_changelog`. Both were
+wrong, which makes it eight of eight: every tool in this server had a real
+defect the first time it was pointed at real code.
+
+### Fixed - get_chunk refused the files it exists to read
+
+A 955 KB source file came back as "binary, lock, or oversized". The size guard
+it shares with the scanner defaults to 500 KB, which is right for a parser that
+loads whole files and exactly wrong for a tool whose purpose is reading a slice
+of a large one.
+
+The size rule is now bypassed while the binary, lock and minified rules still
+apply, and the read is streamed line by line, so memory is bounded by the
+requested slice rather than by the file.
+
+Also: a missing file said "binary, lock, or oversized" and now says "Not a
+file"; and an inverted range (`start_line=50, end_line=10`) returns the single
+line at `start_line`.
+
+### Fixed - generate_changelog raised on state it had not written
+
+A `health_history` entry with no `score`, a null score, or a string score threw
+`KeyError`, `TypeError` and `ValueError` respectively - out through the MCP
+boundary, which tool functions are not allowed to do. `reforge-state.json` is a
+file on disk that an older version or a partial scan can shape differently.
+
+Unusable entries are now skipped, and with no usable score the health line is
+omitted rather than fabricated. The same applies to a `fix_log` entry that is
+not a dict.
+
+### Fixed - generate_changelog claimed success for a write that never happened
+
+The writer ended `except OSError: pass`, and the MCP tool returned
+`{"success": True}` unconditionally. A read-only file or a full disk looked
+exactly like a success. `generate_changelog` now returns whether it wrote, and
+the tool reports `success: False` with the path when it did not.
+
 ## 0.2.7 - 2026-10-24
 
 **If you have run `write_fix` on a Windows checkout, check `git diff`.** Before

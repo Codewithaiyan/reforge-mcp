@@ -117,3 +117,6 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R38 — a refused diff must not rewrite the file (0.2.7)
 - [x] R39 — never clobber a user's own .bak file (0.2.7)
 - [x] R40 — a non-UTF8 file returns an error instead of raising (0.2.7)
+- [x] R41 — let get_chunk read a slice of an oversized file (0.2.8)
+- [x] R42 — survive malformed reforge-state.json when writing the changelog (0.2.8)
+- [x] R43 — report a failed changelog write instead of claiming success (0.2.8)

@@ -1092,3 +1092,58 @@ functions return a dict and never raise across the MCP boundary.
 **Not tested:** interrupting the process mid-write. `apply_diff` writes a
 `.tmp` and renames, and the restore is a single `os.replace`, both atomic, but
 no test kills the process to prove it.
+
+## R41 — get_chunk refused the files it exists to read
+
+**Evidence:** `get_chunk` on a 955 KB source file returned
+`File skipped: 'big.py' is a binary, lock, or oversized file`.
+
+**Root cause:** it called `should_skip_file(resolved)`, whose default
+`max_file_size_kb` is 500. That guard is right for `parse_directory`, which
+loads whole files into a parser, and exactly wrong here: reading a slice of a
+large file is what chunking is for, so the tool refused precisely the files
+worth chunking.
+
+**Resolution:** the size rule is bypassed (`max_file_size_kb=2**40`) while the
+binary, lock and minified rules still apply, and the read is now streamed line
+by line, so memory is bounded by the requested slice rather than the file.
+A 955 KB file chunks correctly.
+
+Also fixed while there: a missing file reported "binary, lock, or oversized"
+because `should_skip_file` returns True when it cannot stat the path. It now
+says "Not a file". And an inverted range (`start_line=50, end_line=10`) returns
+the single line at `start_line` rather than falling through to the tail.
+
+## R42 — generate_changelog raised on state it had not written
+
+**Evidence:** three separate exceptions out of `generate_changelog`, each from
+a plausible `health_history` entry:
+
+```
+{"timestamp": "x"}   -> KeyError: 'score'
+{"score": None}      -> TypeError: unsupported format string passed to NoneType
+{"score": "ninety"}  -> ValueError: Unknown format code 'f' for object of type 'str'
+```
+
+**Root cause:** `history[-1]["score"]` and `{...:.1f}` assume every entry was
+written by the current version with a numeric score. `reforge-state.json` is a
+file on disk that an older version, a partial scan or a hand edit can shape
+differently. `generate_changelog_tool` has no try/except, so each of these left
+the MCP boundary as an exception.
+
+**Resolution:** `_score_of` returns the score only when it is a real number, and
+unusable entries are skipped when computing the delta. `_fix_label` does the
+same for a `fix_log` entry that is not a dict. With no usable score the health
+line is omitted rather than fabricated.
+
+## R43 — generate_changelog reported success for a write that never happened
+
+**Evidence:** against a read-only `REFORGE_CHANGES.md`, the MCP tool returned
+`{"success": True, "path": ...}` and the file was untouched.
+
+**Root cause:** the writer ended `except OSError: pass` and returned None;
+the wrapper returned `{"success": True}` unconditionally, so there was nothing
+for it to report. A full disk or a read-only checkout looked like a success.
+
+**Resolution:** `generate_changelog` returns whether it wrote the file, and the
+tool returns `success: False` with an error naming the path when it did not.

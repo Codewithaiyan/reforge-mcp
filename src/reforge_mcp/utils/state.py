@@ -102,28 +102,58 @@ def ensure_gitignore(repo_path: str) -> bool:
         return False
 
 
-def generate_changelog(repo_path: str, state: dict[str, Any]) -> None:
-    """Write REFORGE_CHANGES.md summarising health delta, fixes, and pending items."""
-    history: list[dict] = state.get("health_history", [])
-    fix_log: list[dict] = state.get("fix_log", [])
-    pending: list[Any] = state.get("pending_fixes", [])
+def _fix_label(entry: Any) -> str:
+    """A one-line description of a fix_log entry, whatever shape it is in."""
+    if not isinstance(entry, dict):
+        return str(entry)
+    return str(entry.get("message") or entry.get("file") or "unknown")
 
-    if len(history) >= 2:
-        delta = history[-1]["score"] - history[-2]["score"]
+
+def _score_of(entry: Any) -> float | None:
+    """
+    The score in a history entry, or None if it is not a usable number.
+
+    State on disk is not guaranteed to have been written by this version:
+    an entry with no score, or a null, or a string, used to raise KeyError,
+    TypeError and ValueError respectively - out through the MCP boundary.
+    """
+    if not isinstance(entry, dict):
+        return None
+    value = entry.get("score")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def generate_changelog(repo_path: str, state: dict[str, Any]) -> bool:
+    """
+    Write REFORGE_CHANGES.md: health delta, fixes, pending items.
+
+    Returns whether the file was written. It used to swallow OSError and
+    return None, so the MCP tool reported success for a write that never
+    happened.
+    """
+    history: list[Any] = state.get("health_history") or []
+    fix_log: list[Any] = state.get("fix_log") or []
+    pending: list[Any] = state.get("pending_fixes") or []
+
+    scores = [s for s in (_score_of(h) for h in history) if s is not None]
+    if len(scores) >= 2:
+        delta = scores[-1] - scores[-2]
         sign = "+" if delta >= 0 else ""
         score_line = (
-            f"**Health score:** {history[-1]['score']:.1f} "
+            f"**Health score:** {scores[-1]:.1f} "
             f"({sign}{delta:.1f} from previous scan)\n\n"
         )
-    elif history:
-        score_line = f"**Health score:** {history[-1]['score']:.1f}\n\n"
+    elif scores:
+        score_line = f"**Health score:** {scores[-1]:.1f}\n\n"
     else:
         score_line = ""
 
     fixes_md = ""
     if fix_log:
         items = "".join(
-            f"- {f.get('message') or f.get('file') or 'unknown'}\n" for f in fix_log
+            f"- {_fix_label(f)}\n" for f in fix_log
         )
         fixes_md = f"## Fixes Applied\n\n{items}\n"
 
@@ -141,8 +171,9 @@ def generate_changelog(repo_path: str, state: dict[str, Any]) -> None:
 
     try:
         (Path(repo_path) / "REFORGE_CHANGES.md").write_text(content, encoding="utf-8")
+        return True
     except OSError:
-        pass
+        return False
 
 
 def startup_tasks(repo_path: str) -> dict[str, Any]:
