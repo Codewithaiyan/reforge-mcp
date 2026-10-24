@@ -27,9 +27,25 @@ def _parse_hunks(diff_str: str) -> list[dict]:
 
 
 def _same_line(a: str, b: str) -> bool:
-    # shortcut: compare ignoring line endings, so an LF diff applies to a CRLF file;
-    # upgrade to preserving the file's own endings when mixed-ending files show up
+    # Compare ignoring line endings, so an LF diff applies to a CRLF file.
     return a.rstrip("\r\n") == b.rstrip("\r\n")
+
+
+def _dominant_newline(text: str) -> str:
+    """The line ending the file mostly uses, so a patch can keep using it."""
+    crlf = text.count("\r\n")
+    return "\r\n" if crlf > text.count("\n") - crlf else "\n"
+
+
+def _reterminate(line: str, newline: str) -> str:
+    """
+    Give a line from the diff the file's own ending.
+
+    Replacement lines come out of the diff, so without this a CRLF file
+    patched by an LF diff ends up with mixed endings inside the hunk.
+    """
+    body = line.rstrip("\r\n")
+    return body + newline if body != line else body
 
 
 def apply_diff(file_path: str | Path, diff_str: str) -> bool:
@@ -41,8 +57,12 @@ def apply_diff(file_path: str | Path, diff_str: str) -> bool:
     """
     path = Path(file_path)
     try:
-        original = path.read_text(encoding="utf-8")
-    except OSError:
+        # newline="" so the file's own endings survive the round trip.
+        # With translation on, writing back an LF file on Windows rewrote
+        # every line as CRLF: a diff changing two lines touched all of them.
+        with path.open(encoding="utf-8", newline="") as fh:
+            original = fh.read()
+    except (OSError, UnicodeDecodeError):
         return False
 
     hunks = _parse_hunks(diff_str)
@@ -52,6 +72,7 @@ def apply_diff(file_path: str | Path, diff_str: str) -> bool:
     lines = original.splitlines(keepends=True)
     result = list(lines)
     offset = 0
+    newline = _dominant_newline(original)
 
     for hunk in hunks:
         old_count = hunk["old_count"]
@@ -68,11 +89,11 @@ def apply_diff(file_path: str | Path, diff_str: str) -> bool:
                 continue
             if line.startswith(" "):
                 expected.append(line[1:])
-                replacement.append(line[1:])
+                replacement.append(_reterminate(line[1:], newline))
             elif line.startswith("-"):
                 expected.append(line[1:])
             elif line.startswith("+"):
-                replacement.append(line[1:])
+                replacement.append(_reterminate(line[1:], newline))
 
         if len(expected) != old_count:
             return False  # header disagrees with its own body
@@ -86,7 +107,8 @@ def apply_diff(file_path: str | Path, diff_str: str) -> bool:
 
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
-        tmp.write_text("".join(result), encoding="utf-8")
+        with tmp.open("w", encoding="utf-8", newline="") as fh:
+            fh.write("".join(result))
         tmp.replace(path)
     except OSError:
         tmp.unlink(missing_ok=True)

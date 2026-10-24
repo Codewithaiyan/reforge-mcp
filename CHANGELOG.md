@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.2.7 - 2026-10-24
+
+**If you have run `write_fix` on a Windows checkout, check `git diff`.** Before
+this release it could rewrite every line ending in the file, including on calls
+that changed nothing and calls that failed.
+
+The first adversarial exercise of `write_fix` - the one tool that writes to
+disk. Four defects, all in the "the file must be either correctly changed or
+byte-identical" contract.
+
+### Fixed - every line ending in the file was rewritten
+
+Both the applier and the backup read with `read_text` and wrote with
+`write_text`. Reading folds CRLF to LF; writing expands LF to the platform's
+ending. On Windows an LF file came back as CRLF whatever the diff said, so a
+two-line patch produced a diff against the whole file.
+
+Both sides now use `newline=""`, and replacement lines - which come out of the
+diff, with the diff's endings - are reterminated to the file's own. A CRLF file
+patched by an LF diff stays entirely CRLF, and the reverse.
+
+All ten existing diff tests created their fixture with `write_text` and
+asserted with `read_text`, so the translation cancelled out on both sides of
+every assertion. The new tests compare bytes.
+
+### Fixed - a refused diff still rewrote the file
+
+The applier correctly leaves the file alone when a diff does not match, but
+`write_fix` then restored from the re-encoded backup anyway. A call that
+changed nothing rewrote every line. Same for an empty diff.
+
+The backup is now a byte-for-byte copy, so restoring it is a no-op on the paths
+where nothing needed restoring.
+
+### Fixed - a pre-existing .bak file was destroyed
+
+The backup was written to `<file>.bak`, overwriting whatever was there, and
+deleted on success. If you keep your own `config.py.bak`, it was gone. The
+backup now uses a unique `tempfile` name in the same directory.
+
+### Fixed - a non-UTF8 file raised instead of returning
+
+Only `OSError` was caught, so `UnicodeDecodeError` escaped across the MCP
+boundary. A binary file now returns `success: False` and is left untouched.
+
+### Not covered
+
+No test interrupts the process mid-write. The applier writes a `.tmp` and
+renames, and the restore is a single `os.replace` - both atomic - but that is
+reasoned, not demonstrated.
+
 ## 0.2.6 - 2026-10-24
 
 The first time anyone pointed `score_risk`, `infer_architecture` and

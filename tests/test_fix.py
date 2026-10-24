@@ -115,3 +115,133 @@ class TestWriteFix:
         assert result["success"] is False
         assert result["rolled_back"] is True
         assert f.read_text() == "x = 1\n"
+
+LF_SOURCE = b"def a():\n    return 1\n\n\ndef b():\n    return 2\n"
+CRLF_SOURCE = LF_SOURCE.replace(b"\n", b"\r\n")
+
+LF_DIFF = (
+    "--- a/t.py\n"
+    "+++ b/t.py\n"
+    "@@ -1,2 +1,2 @@\n"
+    " def a():\n"
+    "-    return 1\n"
+    "+    return 99\n"
+)
+CRLF_DIFF = LF_DIFF.replace("\n", "\r\n")
+
+
+class TestWriteFixPreservesBytes:
+    """
+    A file writer has exactly two acceptable outcomes: the change landed, or
+    the file is byte-identical. Everything here was failing before 0.2.7.
+    """
+
+    def test_an_lf_file_stays_lf(self, tmp_path: Path) -> None:
+        # read_text/write_text round-tripped through os.linesep, so on Windows
+        # a two-line patch rewrote every line ending in the file
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert result["success"] is True
+        assert b"\r" not in f.read_bytes()
+
+    def test_a_crlf_file_patched_by_an_lf_diff_stays_crlf(self, tmp_path: Path) -> None:
+        # replacement lines come from the diff, so without reterminating them
+        # the hunk ends up with different endings from the rest of the file
+        f = tmp_path / "t.py"
+        f.write_bytes(CRLF_SOURCE)
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+        data = f.read_bytes()
+
+        assert result["success"] is True
+        assert data.count(b"\r\n") == CRLF_SOURCE.count(b"\r\n")
+        assert b"\n" not in data.replace(b"\r\n", b"")
+
+    def test_an_lf_file_patched_by_a_crlf_diff_stays_lf(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+
+        result = write_fix(str(f), CRLF_DIFF, repo_root=str(tmp_path))
+
+        assert result["success"] is True
+        assert b"\r" not in f.read_bytes()
+
+    def test_a_refused_diff_leaves_the_file_byte_identical(self, tmp_path: Path) -> None:
+        # the file is never modified when a diff is refused, but the rollback
+        # that ran anyway used to rewrite it from a re-encoded backup
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+        stale = LF_DIFF.replace("    return 1", "    return 7777")
+
+        result = write_fix(str(f), stale, repo_root=str(tmp_path))
+
+        assert result["success"] is False
+        assert f.read_bytes() == LF_SOURCE
+
+    def test_an_empty_diff_leaves_the_file_byte_identical(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+
+        write_fix(str(f), "", repo_root=str(tmp_path))
+
+        assert f.read_bytes() == LF_SOURCE
+
+    def test_rollback_restores_the_file_byte_identical(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+
+        result = write_fix(
+            str(f),
+            LF_DIFF,
+            repo_root=str(tmp_path),
+            test_command="python -c exit(1)",
+            allowed_test_commands=["python"],
+        )
+
+        assert result["rolled_back"] is True
+        assert f.read_bytes() == LF_SOURCE
+
+    def test_a_users_own_bak_file_is_not_destroyed(self, tmp_path: Path) -> None:
+        # the backup used a fixed "<name>.bak", overwrote whatever was there
+        # and then deleted it
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+        mine = tmp_path / "t.py.bak"
+        mine.write_bytes(b"a backup of my own\n")
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert result["success"] is True
+        assert mine.exists()
+        assert mine.read_bytes() == b"a backup of my own\n"
+
+    def test_a_non_utf8_file_returns_an_error_instead_of_raising(
+        self, tmp_path: Path
+    ) -> None:
+        # only OSError was caught, so UnicodeDecodeError crossed the MCP
+        # boundary, which tool functions are not allowed to do
+        f = tmp_path / "t.py"
+        original = bytes([0xFF, 0xFE, 0x00]) + b"binary\n"
+        f.write_bytes(original)
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert isinstance(result, dict)
+        assert result["success"] is False
+        assert f.read_bytes() == original
+
+    def test_no_backup_is_left_behind_on_any_path(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+        write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+        write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))  # now refused
+
+        leftovers = [
+            q.name
+            for q in tmp_path.iterdir()
+            if ".reforge-bak" in q.name or q.name.endswith((".bak", ".tmp"))
+        ]
+        assert leftovers == []

@@ -5,10 +5,26 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import Any
 
-from ..utils.diff import apply_diff, rollback
+from ..utils.diff import apply_diff
 from ..utils.security import SecurityError, validate_path, validate_test_command
+
+
+def _restore(bak: Path, target: Path) -> bool:
+    """
+    Put the backup back, byte for byte, and remove it.
+
+    os.replace is atomic on both platforms, so the target is never left
+    half written even if the process dies during the restore.
+    """
+    try:
+        os.replace(bak, target)
+        return True
+    except OSError:
+        bak.unlink(missing_ok=True)
+        return False
 
 
 def write_fix(
@@ -38,11 +54,19 @@ def write_fix(
         except SecurityError as e:
             return {"success": False, "test_output": None, "error": str(e), "rolled_back": False}
 
-    # Create .bak for reliable file-level rollback
-    bak = resolved.with_suffix(resolved.suffix + ".bak")
+    # A byte-for-byte copy under a unique name. Reading as text and writing
+    # it back re-encoded every line ending, so a rollback on Windows
+    # returned an LF file as CRLF - a no-op call rewrote the whole file.
+    # The old fixed '.bak' name also clobbered a backup of the user's own.
     try:
-        original = resolved.read_text(encoding="utf-8")
-        bak.write_text(original, encoding="utf-8")
+        handle, bak_name = tempfile.mkstemp(
+            dir=resolved.parent,
+            prefix=resolved.name + ".",
+            suffix=".reforge-bak",
+        )
+        os.close(handle)
+        bak = Path(bak_name)
+        bak.write_bytes(resolved.read_bytes())
     except OSError as e:
         return {
             "success": False,
@@ -52,8 +76,7 @@ def write_fix(
         }
 
     if not apply_diff(str(resolved), diff_str):
-        rollback(str(resolved))
-        bak.unlink(missing_ok=True)
+        _restore(bak, resolved)
         return {
             "success": False,
             "test_output": None,
@@ -114,8 +137,7 @@ def write_fix(
         return {"success": True, "test_output": test_output, "error": None, "rolled_back": False}
 
     # Tests failed — restore original file
-    rollback(str(resolved))
-    bak.unlink(missing_ok=True)
+    _restore(bak, resolved)
     return {
         "success": False,
         "test_output": test_output,

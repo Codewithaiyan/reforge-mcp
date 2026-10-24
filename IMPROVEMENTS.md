@@ -1026,3 +1026,69 @@ did not count, and the number read as a verdict on the repository.
 **Resolution:** the result carries `coverage`, and below 0.5 a `caveat` naming
 the fraction: "6 of 175 source files were analysed. This score describes those
 files, not the repository." This project scores 85.0 at coverage 1.0, no caveat.
+
+## R37 — write_fix rewrote every line ending in the file
+
+**Evidence:** first adversarial exercise of `write_fix`, against published
+0.2.6 on Windows. A diff changing two lines of an LF file produced a file where
+all six line endings were CRLF.
+
+**Root cause:** both `apply_diff` and the backup used `read_text` then
+`write_text`. Reading translates CRLF to LF through universal newlines;
+writing translates LF back to `os.linesep`. On Windows an LF file therefore
+came back as CRLF whatever the diff said.
+
+**Resolution:** both sides read and write with `newline=""`, so the file's own
+endings survive. Replacement lines come out of the diff, which has endings of
+its own, so `_reterminate` gives every line the file's dominant ending - a CRLF
+file patched by an LF diff stays entirely CRLF, and the reverse.
+
+**Why the existing tests missed it:** all ten diff tests used `write_text` to
+create the fixture and `read_text` to assert, so both sides of every assertion
+went through the same translation and cancelled it out. The new tests compare
+bytes.
+
+## R38 — a refused diff still rewrote the file
+
+**Evidence:** same run. A diff with stale context was correctly refused, and
+the file was no longer byte-identical.
+
+**Root cause:** `apply_diff` leaves the file untouched when it refuses, but
+`write_fix` then called `rollback()` anyway, which replaced the file with the
+re-encoded backup from R37. So a call that changed nothing rewrote every line -
+in a git repo, a diff against the whole file.
+
+**Resolution:** the backup is a byte-for-byte copy (`read_bytes` /
+`write_bytes`), so restoring it is a no-op even on the paths where it was never
+needed. The empty-diff case had the same shape and is covered too.
+
+## R39 — write_fix destroyed a pre-existing .bak file
+
+**Evidence:** `target.py.bak` containing unrelated content was overwritten and
+then deleted by a successful `write_fix` on `target.py`.
+
+**Root cause:** the backup name was `<file>.bak`, a name a user may well be
+using themselves. It was written over without checking, and unlinked on
+success.
+
+**Resolution:** `tempfile.mkstemp` in the target's directory with a
+`.reforge-bak` suffix, so the name cannot collide, restored with `os.replace`.
+`rollback()` stays in `utils.diff` as a public helper but `write_fix` no longer
+depends on the conventional name.
+
+## R40 — a non-UTF8 file raised across the MCP boundary
+
+**Evidence:** `write_fix` on a file starting with 0xFF 0xFE raised
+`UnicodeDecodeError`.
+
+**Root cause:** the backup caught `OSError` only. `UnicodeDecodeError` is a
+`ValueError`, so it propagated - breaking the project's own rule that tool
+functions return a dict and never raise across the MCP boundary.
+
+**Resolution:** the backup no longer decodes at all, and `apply_diff` catches
+`UnicodeDecodeError` alongside `OSError`. A binary file now returns
+`success: False` and is left byte-identical.
+
+**Not tested:** interrupting the process mid-write. `apply_diff` writes a
+`.tmp` and renames, and the restore is a single `os.replace`, both atomic, but
+no test kills the process to prove it.

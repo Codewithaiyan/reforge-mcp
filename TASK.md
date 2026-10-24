@@ -113,3 +113,7 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R34 — make score_risk symbol-aware and its factors honest (0.2.6)
 - [x] R35 — classify architecture from imports, not filenames (0.2.6)
 - [x] R36 — report coverage alongside the health score (0.2.6)
+- [x] R37 — preserve the file's line endings through a patch (0.2.7)
+- [x] R38 — a refused diff must not rewrite the file (0.2.7)
+- [x] R39 — never clobber a user's own .bak file (0.2.7)
+- [x] R40 — a non-UTF8 file returns an error instead of raising (0.2.7)

@@ -46,9 +46,12 @@ tests/               one file per module, pytest, no fixtures framework beyond t
   `tools/` or `scanner/` and do nothing else. Logic in `server.py` is untestable.
 - **State writes are `.tmp` -> rename.** See `utils/state.py:save_state`. Never
   write `reforge-state.json` in place.
-- **`write_fix` must be able to restore the original file on every failure
-  path.** If a new early-return is added, check the `.bak` is either used or
-  cleaned up.
+- **`write_fix` must leave the file either correctly changed or byte-identical,
+  on every path.** The backup is a byte copy under a unique `tempfile` name, so
+  restoring it is a no-op even where nothing needed restoring; if a new
+  early-return is added, check it goes through `_restore` or unlinks the copy.
+  Never read or write a patched file with `read_text`/`write_text`: that
+  translates line endings and was R37.
 - **Scanner output is a public contract.** `scan_repo`'s return shape is consumed
   by `get_health_score`, `score_risk` and `infer_architecture`. Changing a key
   means changing all three.
