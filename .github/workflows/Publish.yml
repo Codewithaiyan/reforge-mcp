@@ -4,9 +4,14 @@ name: Publish
 # Trusted Publishing: the job exchanges a GitHub OIDC token for a short-lived
 # PyPI credential, so no API token is stored anywhere.
 #
-# One-time setup, on pypi.org -> reforge-mcp -> Publishing -> add a publisher:
+# DO NOT RENAME THIS FILE, including its capital P. PyPI matches the publisher
+# it trusts by exact workflow filename, and the registered publisher for this
+# project is:
 #   owner: Codewithaiyan   repository: reforge-mcp
-#   workflow: publish.yml  environment: pypi
+#   workflow: Publish.yml  environment: pypi
+# Renaming the file without updating that configuration silently breaks
+# publishing - and a publisher cannot be edited on PyPI, only deleted and
+# re-added.
 on:
   release:
     types: [published]
