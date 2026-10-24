@@ -15,7 +15,6 @@ _GITIGNORE_ENTRIES = [
     ".reforge*",
     "reforge-state.json.bak.*",
     "REFORGE_CHANGES.md",
-    ".reforge-session.json",
 ]
 
 _EMPTY_STATE: dict[str, Any] = {

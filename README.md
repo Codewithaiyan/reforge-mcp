@@ -219,7 +219,7 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 4. Runs the optional test command (validated against the allowlist)
 5. On any failure — a diff that does not match the file, test exit ≠ 0 — restores from `.bak` and returns `rolled_back: true`
 
-`git_commit` stages only the listed files and creates an atomic commit via GitPython. It reads `session_budget` and `confirm_every` from `reforge.toml` and enforces them: once the session budget is exceeded commits are blocked; at every `confirm_every` checkpoint the tool returns `needs_confirmation: true` and waits for `confirmed: true` before proceeding.
+`git_commit` stages only the listed files and creates an atomic commit via GitPython. It reads `session_budget` and `confirm_every` from `reforge.toml` and enforces them: once the session budget is exceeded commits are blocked; at every `confirm_every` checkpoint the tool returns `needs_confirmation: true` and waits for `confirmed: true` before proceeding. The count is held per repository for the life of the server process, so restarting the server starts a new session.
 
 ---
 

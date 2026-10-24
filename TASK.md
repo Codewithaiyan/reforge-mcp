@@ -69,7 +69,7 @@ function nothing calls.
 
 - [x] **R13** `DEFAULT_ALLOWED_TEST_COMMANDS` in `security.py`, used whenever the caller passes no allowlist or an empty one
 - [x] **R14** `shlex.split` + `shutil.which` + no shell. `which` also resolves the `.cmd` shims npm and yarn install on Windows, which a bare argv would have missed
-- [ ] **R11** Real session identity in `.reforge-session.json` (`session_id`, `started_at`); add a reset path
+- [x] **R11** Solved by deletion instead: the counter is a per-repo dict in the server process, so it resets on restart. No `session_id`, no `started_at`, no reset tool — the server process is the session, and the error message's "start a new session" is now literally true
 - [ ] **R19** End-to-end test: scan -> apply -> test -> commit, plus the three rollback paths
 - [x] **R16** Skipped behind a probe that actually tries to create a symlink. Suite is now fully green: 103 passed, 1 skipped, 0 failed
 - [ ] **R17** CI matrix: ubuntu/macos/windows x 3.11/3.12/3.13; normalise report paths to forward slashes

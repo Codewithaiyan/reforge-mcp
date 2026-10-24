@@ -366,9 +366,22 @@ There is no session id, no timestamp, and no reset path — so after 20 commits
 *ever*, every call fails with "Start a new session to continue" and no way to
 start one short of deleting the file by hand.
 
-**Fix:** store `{session_id, started_at, fix_count}`; treat a new server process
-(or a gap beyond N hours) as a new session. Add a `reset_session` tool or accept
-`reset=True` on `git_commit`.
+**Fixed 2026-10-24 by deleting the persistence instead.** The plan above was
+three fields and a new tool; none were needed. `.reforge-session.json` existed
+only to carry the count across restarts, and that was the entire defect — the
+server process already *is* the session, under stdio transport one process per
+client. The count is now a module-level `dict[repo_path, int]`, so it resets
+when the process does, and the error message's "Start a new session to
+continue" is literally true for the first time.
+
+Per-repo keying is kept (one server may be pointed at several repos), and
+`_load_session` / `_save_session` / `_SESSION_FILE` / `import json` are gone -
+`git.py` 175 -> 164 lines. The redundant `.reforge-session.json` gitignore entry
+went too; `.reforge*` already covered it and the file is no longer written.
+
+No README change was needed: it already said "max commits per Claude session
+before hard stop", which the code simply did not implement. One clause was added
+to say where the session boundary is.
 
 ### R12. `reforge.toml` is largely decorative
 `reforge.toml`, `src/reforge_mcp/tools/scan.py:181`

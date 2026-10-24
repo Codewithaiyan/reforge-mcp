@@ -1,10 +1,10 @@
 """Tests for the git_commit tool."""
 
-import json
 from pathlib import Path
 
 import pytest
 
+from reforge_mcp.tools import git as git_tool
 from reforge_mcp.tools.git import git_commit
 
 
@@ -47,8 +47,7 @@ class TestGitCommit:
         assert "code.py" in result["files_committed"]
 
     def test_session_budget_exceeded_blocks_commit(self, git_repo: Path) -> None:
-        session_path = git_repo / ".reforge-session.json"
-        session_path.write_text(json.dumps({"fix_count": 20}))
+        git_tool._fix_counts[str(git_repo.resolve())] = 20
 
         f = git_repo / "code.py"
         f.write_text("x = 1\n")
@@ -61,8 +60,7 @@ class TestGitCommit:
 
     def test_confirmation_checkpoint_triggers(self, git_repo: Path) -> None:
         # fix_count=5 is a multiple of confirm_every=5, so checkpoint fires
-        session_path = git_repo / ".reforge-session.json"
-        session_path.write_text(json.dumps({"fix_count": 5}))
+        git_tool._fix_counts[str(git_repo.resolve())] = 5
 
         f = git_repo / "code.py"
         f.write_text("x = 1\n")
@@ -102,3 +100,26 @@ class TestGitCommit:
         assert result["error"] is not None
         # the unrelated file must still be untracked - no sweeping commit happened
         assert "user_work_in_progress.py" in _git.Repo(str(git_repo)).untracked_files
+
+    def test_budget_resets_for_a_new_session(self, git_repo: Path) -> None:
+        # the budget covers one server process; an earlier version persisted the
+        # count to disk, making 20 commits *ever* a permanent hard stop
+        key = str(git_repo.resolve())
+        git_tool._fix_counts[key] = 20
+        f = git_repo / "code.py"
+        f.write_text("x = 1\n")
+
+        blocked = git_commit(str(git_repo), files=["code.py"], message="feat: add")
+        assert blocked["success"] is False
+
+        git_tool._fix_counts.pop(key)  # a fresh process starts with no history
+        allowed = git_commit(str(git_repo), files=["code.py"], message="feat: add")
+        assert allowed["success"] is True
+
+    def test_commit_leaves_no_session_file_behind(self, git_repo: Path) -> None:
+        f = git_repo / "code.py"
+        f.write_text("x = 1\n")
+
+        git_commit(str(git_repo), files=["code.py"], message="feat: add")
+
+        assert not (git_repo / ".reforge-session.json").exists()
