@@ -239,8 +239,20 @@ start one short of deleting the file by hand.
   who reads that comment and trusts it will lose data.
 
 **Fix:** one config loader module, one documented schema, read at every point
-that has a corresponding knob. Delete keys that are not wired. `dry_run` is the
-urgent one — implement it or remove it immediately.
+that has a corresponding knob. Delete keys that are not wired.
+
+**`dry_run` resolved 2026-10-24 by deleting the key.** Implementing it faithfully
+was the worse option in both directions: as shipped (`dry_run = true`) it would
+have disabled `write_fix` for every user who has a `reforge.toml`, breaking the
+entire autonomous flow by default; defaulting it to `false` would have
+contradicted the file it ships in. The preview path already exists — Claude shows
+the diff in chat before calling `write_fix`, and `get_chunk` reads the current
+content. A three-line reinstatement is available if a real need appears; a
+comment promising "no modifications are made" while the tool writes is worse
+than no option at all.
+
+The rest of R12 (the `ignore` / `ignore_dirs` mismatch and the five other
+unwired keys) stays open as R12b in M2.
 
 ### R13. `write_fix` has no default test-command allowlist
 `src/reforge_mcp/tools/fix.py:59`

@@ -23,10 +23,6 @@ test_before_fix = true
 # makes review easier and allows selective rollback of problematic fixes.
 atomic_commits = true
 
-# Whether to show proposed changes without applying them - safe default that
-# requires explicit opt-in before any modifications are made to the repository.
-dry_run = true
-
 # Number of fixes to batch before requiring user confirmation - prevents runaway
 # automation while still allowing productive bulk operations with oversight.
 confirm_every = 5
