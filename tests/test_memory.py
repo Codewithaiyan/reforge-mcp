@@ -71,7 +71,7 @@ class TestMemory:
         assert "reforge-state.json" in content
         assert ".reforge*" in content
         assert "REFORGE_CHANGES.md" in content
-        assert ".reforge-session.json" in content
+        assert ".reforge*" in content
 
         # Idempotent: second call adds nothing
         added_again = ensure_gitignore(str(tmp_path))

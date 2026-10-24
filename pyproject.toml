@@ -1,6 +1,6 @@
 [project]
 name = "reforge-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server that automatically cleans up messy vibe-coded repositories"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Software Development :: Quality Assurance",
@@ -32,8 +34,6 @@ dependencies = [
     "fastmcp>=0.1.0",
     "tree-sitter>=0.24.0",
     "gitpython>=3.1.0",
-    "sentence-transformers>=3.0.0",
-    "rich>=13.0.0",
     "tree-sitter-python>=0.25.0",
     "tree-sitter-javascript>=0.25.0",
     "tree-sitter-typescript>=0.23.2",

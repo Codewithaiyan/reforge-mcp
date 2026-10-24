@@ -25,6 +25,21 @@ from reforge_mcp.utils.security import (
 )
 
 
+def _symlinks_available() -> bool:
+    """Windows refuses symlink creation without Developer Mode or elevation."""
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "target.txt"
+        target.write_text("x")
+        try:
+            (Path(tmp) / "link.txt").symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+        return True
+
+
+SYMLINKS_AVAILABLE = _symlinks_available()
+
+
 class TestValidatePath:
     """Tests for path validation and traversal prevention."""
 
@@ -73,6 +88,10 @@ class TestValidatePath:
         assert result.name == "main.py"
         assert "src" in str(result)
 
+    @pytest.mark.skipif(
+        not SYMLINKS_AVAILABLE,
+        reason="this platform does not permit creating symlinks for the fixture",
+    )
     def test_symlink_to_outside_blocked(self, tmp_path: Path) -> None:
         """
         Verify that symlinks pointing outside the repo are blocked.
@@ -311,3 +330,19 @@ class TestSecurityError:
         so it can be caught and handled appropriately.
         """
         assert isinstance(SecurityError("test"), Exception)
+
+
+class TestDefaultTestCommandAllowlist:
+
+    def test_documented_runner_is_allowed_without_an_explicit_list(self) -> None:
+        assert validate_test_command("pytest tests/") is True
+        assert validate_test_command("go test ./...") is True
+
+    def test_unknown_command_is_still_rejected_without_an_explicit_list(self) -> None:
+        with pytest.raises(SecurityError):
+            validate_test_command("rm -rf /")
+
+    def test_empty_list_falls_back_to_the_default_allowlist(self) -> None:
+        # an empty allowlist used to reject every command, so write_fix could
+        # never run tests unless its caller passed a list of its own
+        assert validate_test_command("pytest", []) is True

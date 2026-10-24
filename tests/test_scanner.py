@@ -69,3 +69,23 @@ def test_dep_graph_structure():
         assert "nodes" in result["dep_graph"]
         assert "edges" in result["dep_graph"]
         assert "circular" in result["dep_graph"]
+
+
+def test_scan_ignore_key_is_honoured(tmp_path: Path) -> None:
+    # "[scan] ignore" is what the shipped config and the README use; the reader
+    # looked for a top-level "ignore_dirs", so the list was silently discarded
+    from reforge_mcp.tools.scan import scan_repo
+
+    (tmp_path / "keep.py").write_text("def kept():\n    return 1\n")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    (generated / "noise.py").write_text("def generated_noise():\n    return 1\n")
+
+    before = scan_repo(str(tmp_path))["summary"]["total_files"]
+
+    (tmp_path / "reforge.toml").write_text('[scan]\nignore = ["generated"]\n')
+    after = scan_repo(str(tmp_path))
+
+    assert before == 2
+    assert after["summary"]["total_files"] == 1
+    assert "generated_noise" not in {d["symbol"] for d in after["dead_code"]}

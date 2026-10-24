@@ -23,6 +23,8 @@ Unlike regex-based scanning, AST parsing understands code structure:
 """
 
 import logging
+import os
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -120,7 +122,7 @@ def scan_repo(
 
     # Detect dead code
     logger.info("Analyzing dead code...")
-    dead_code_results = find_dead_code(parse_results, repo_root=root_path)
+    dead_code_results = find_dead_code(parse_results)
     dead_code = [
         {
             "symbol": info.symbol,
@@ -209,18 +211,15 @@ def _load_ignore_dirs(root: Path) -> set[str]:
         return default_ignore
 
     try:
-        import tomllib
-    except ImportError:
-        # Python < 3.11
-        import tomli as tomllib
-
-    try:
         config = tomllib.loads(toml_path.read_text())
-        ignore_from_config = config.get("ignore_dirs", [])
-        return default_ignore | set(ignore_from_config)
-    except Exception as e:
+    except (OSError, tomllib.TOMLDecodeError) as e:
         logger.warning(f"Failed to parse reforge.toml: {e}")
         return default_ignore
+
+    # [scan] ignore — the key the shipped config file and the README both use.
+    # This read "ignore_dirs" at the top level, which matched neither, so a
+    # user's ignore list was silently discarded.
+    return default_ignore | set(config.get("scan", {}).get("ignore", []))
 
 
 _SUBPROJECT_MARKERS: dict[str, tuple[str, str]] = {
@@ -272,6 +271,24 @@ def _detect_subprojects(root: Path) -> list[dict[str, str]]:
     return subprojects
 
 
+_TEST_FILE_SUFFIXES = (".test.js", ".test.ts", ".spec.js", ".spec.ts", "_test.go")
+
+
+def _is_test_file(file_path: str) -> bool:
+    """
+    Is this a test file?
+
+    Test suites are held to different norms: thirty small test functions in one
+    file is good practice, not a god object.
+    """
+    path = Path(file_path)
+    if "tests" in path.parts or "test" in path.parts or "__tests__" in path.parts:
+        return True
+    if path.name.startswith("test_") or path.name.endswith("_test.py"):
+        return True
+    return path.name.endswith(_TEST_FILE_SUFFIXES)
+
+
 def _find_god_files(
     parse_results: list,
     max_lines: int = 500,
@@ -282,7 +299,15 @@ def _find_god_files(
 
     GOD FILE CRITERIA:
     - >500 lines of code: Hard to understand, likely does too much
-    - >10 exports (functions + classes): Too many responsibilities
+    - >10 exports (top-level functions + classes): Too many responsibilities
+
+    Methods do not count towards the export total. A file holding one class with
+    thirty methods exports one name, and counting each method made every
+    class-heavy module look like a god file.
+
+    Both thresholds are round numbers rather than discoveries - they are
+    arguments so a caller can disagree, and the report carries the raw `lines`
+    and `exports` so a reader can judge for themselves.
 
     WHY THIS MATTERS:
     God files violate single responsibility principle. They're:
@@ -294,10 +319,12 @@ def _find_god_files(
     god_files = []
 
     for result in parse_results:
-        if result.error:
+        if result.error or _is_test_file(result.file):
             continue
 
-        export_count = len(result.functions) + len(result.classes)
+        method_names = {m for cls in result.classes for m in cls.methods}
+        top_level = [f for f in result.functions if f.name not in method_names]
+        export_count = len(top_level) + len(result.classes)
 
         if result.total_lines > max_lines or export_count > max_exports:
             god_files.append(
@@ -338,30 +365,34 @@ def _build_dependency_graph(
     - Indicates poor architectural boundaries
     - Makes refactoring risky (change ripples through cycle)
     """
-    # Build file -> imports mapping
+    # Collect every parsed file before resolving anything: populating this set
+    # inside the resolution loop meant an import could only ever match a file
+    # seen earlier in iteration order, which is why no edge was ever found.
+    all_files: set[str] = {r.file for r in parse_results if not r.error}
+
     file_imports: dict[str, list[str]] = {}
-    all_files: set[str] = set()
 
     for result in parse_results:
         if result.error:
             continue
 
-        file_path = result.file
-        all_files.add(file_path)
-
-        imported_files = []
+        imported_files: list[str] = []
         for imp in result.imports:
-            # Try to resolve import to a file path
-            # This is simplified - real resolution would need package.json, etc.
-            if imp.from_module:
-                # Convert module path to potential file path
-                potential_path = _resolve_import_to_file(
-                    imp.from_module, Path(result.file).parent
-                )
-                if potential_path and str(potential_path) in all_files:
-                    imported_files.append(str(potential_path))
+            # A bare "import sibling" carries its module in names, not
+            # from_module. Skipping those missed every edge in a flat repo -
+            # including the commonest Python cycle, two modules importing each
+            # other by name.
+            module = imp.from_module or ".".join(imp.names)
+            if not module or module == "*":
+                continue
+            target = _resolve_import_to_file(
+                module, Path(result.file).parent, all_files
+            )
+            if target is not None and target != result.file:
+                imported_files.append(target)
 
-        file_imports[file_path] = imported_files
+        # several imports from one module are one edge
+        file_imports[result.file] = list(dict.fromkeys(imported_files))
 
     # Build nodes and edges
     nodes = list(all_files)
@@ -381,26 +412,47 @@ def _build_dependency_graph(
     }
 
 
-def _resolve_import_to_file(import_path: str, current_dir: Path) -> Path | None:
-    """
-    Resolve an import path to a potential file path.
+_SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go")
 
-    This is a simplified resolver - a full implementation would:
-    - Check package.json for module resolution
-    - Handle TypeScript path mappings
-    - Handle Python package imports
-    - Check node_modules for external packages
-    """
-    # Try common extensions
-    for ext in ["", ".py", ".js", ".ts", ".tsx", ".jsx"]:
-        potential = current_dir / (import_path + ext)
-        if potential.exists():
-            return potential
 
-    # Try as a package import (import_path/__init__.py)
-    package_init = current_dir / import_path / "__init__.py"
-    if package_init.exists():
-        return package_init
+def _resolve_import_to_file(
+    import_path: str, current_dir: Path, known_files: set[str]
+) -> str | None:
+    """
+    Resolve an import to one of the files we parsed, or None for an external one.
+
+    Matches against the parsed file set rather than touching the filesystem, so
+    resolution does not depend on the process working directory.
+
+    shortcut: no package.json "main", no tsconfig path mappings, and no
+    resolution of absolute intra-repo package imports ("from mypkg.a import b"
+    where mypkg lives under src/) - upgrade when a repo that needs one shows up.
+    """
+    if import_path.startswith("."):
+        if "/" in import_path:
+            # JS/TS path: "./utils", "../lib/thing"
+            base = Path(os.path.normpath(current_dir / import_path))
+        else:
+            # Python relative: "." is this package, ".." the one above it
+            dots = len(import_path) - len(import_path.lstrip("."))
+            base = current_dir
+            for _ in range(dots - 1):
+                base = base.parent
+            remainder = import_path[dots:]
+            if remainder:
+                base = base.joinpath(*remainder.split("."))
+    else:
+        base = current_dir.joinpath(*import_path.split("."))
+
+    candidates = [str(base) + ext for ext in _SOURCE_EXTENSIONS]
+    candidates += [
+        str(base / "__init__.py"),
+        str(base / "index.js"),
+        str(base / "index.ts"),
+    ]
+    for candidate in candidates:
+        if candidate in known_files:
+            return candidate
 
     return None
 

@@ -15,7 +15,6 @@ _GITIGNORE_ENTRIES = [
     ".reforge*",
     "reforge-state.json.bak.*",
     "REFORGE_CHANGES.md",
-    ".reforge-session.json",
 ]
 
 _EMPTY_STATE: dict[str, Any] = {
@@ -24,7 +23,6 @@ _EMPTY_STATE: dict[str, Any] = {
     "architecture_hypothesis": None,
     "health_history": [],
     "fix_log": [],
-    "embeddings_cache": {},
     "pending_fixes": [],
 }
 

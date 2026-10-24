@@ -1,6 +1,5 @@
 """Git Operations Tool."""
 
-import json
 import os
 import tomllib
 from pathlib import Path
@@ -8,8 +7,21 @@ from typing import Any
 
 from ..utils.security import SecurityError, validate_path
 
-_SESSION_FILE = ".reforge-session.json"
 _DEFAULT_FIX_CFG = {"session_budget": 20, "confirm_every": 5}
+
+# Commits made this session, per repo. The server process *is* the session, so
+# this resets when it restarts - which is what "start a new session" means and
+# what the budget is documented to cover. Persisting it to disk, as an earlier
+# version did, made it a lifetime budget: after 20 commits ever, every call
+# failed and the only way out was deleting a file by hand.
+_fix_counts: dict[str, int] = {}
+
+
+def _session_key(repo_path: str) -> str:
+    try:
+        return str(Path(repo_path).resolve())
+    except OSError:
+        return repo_path
 
 
 def _load_config(repo_path: str) -> dict:
@@ -18,25 +30,6 @@ def _load_config(repo_path: str) -> dict:
             return tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
         return {"fix": _DEFAULT_FIX_CFG}
-
-
-def _load_session(repo_path: str) -> dict:
-    try:
-        return json.loads(
-            (Path(repo_path) / _SESSION_FILE).read_text(encoding="utf-8")
-        )
-    except (OSError, json.JSONDecodeError, ValueError):
-        return {"fix_count": 0}
-
-
-def _save_session(repo_path: str, session: dict) -> None:
-    dest = Path(repo_path) / _SESSION_FILE
-    tmp = dest.with_suffix(".tmp")
-    try:
-        tmp.write_text(json.dumps(session, indent=2), encoding="utf-8")
-        tmp.replace(dest)
-    except OSError:
-        tmp.unlink(missing_ok=True)
 
 
 def _err(msg: str) -> dict[str, Any]:
@@ -51,7 +44,7 @@ def _err(msg: str) -> dict[str, Any]:
 
 def git_commit(
     repo_path: str,
-    files: list[str] | None = None,
+    files: list[str],
     message: str | None = None,
     branch: str | None = None,
     create_branch: bool = False,
@@ -60,6 +53,8 @@ def git_commit(
     """
     Stage specific files and create an atomic git commit.
 
+    files must be a non-empty list: a fix commit may only ever contain the files
+    that fix touched, never whatever else happened to be in the working tree.
     Enforces session budget and confirmation checkpoints from reforge.toml.
     Returns {success, commit_hash, branch, files_committed, error}.
     Set confirmed=True to proceed past a confirmation checkpoint.
@@ -72,15 +67,17 @@ def git_commit(
     except SecurityError as e:
         return _err(str(e))
 
+    if not files:
+        return _err("No files given: list the files this commit should contain.")
+
     # Validate each requested file path
-    if files:
-        repo_root = Path(repo_path)
-        for fp in files:
-            full = str(repo_root / fp) if not Path(fp).is_absolute() else fp
-            try:
-                validate_path(full, repo_path)
-            except SecurityError as e:
-                return _err(str(e))
+    repo_root = Path(repo_path)
+    for fp in files:
+        full = str(repo_root / fp) if not Path(fp).is_absolute() else fp
+        try:
+            validate_path(full, repo_path)
+        except SecurityError as e:
+            return _err(str(e))
 
     # Load config
     config = _load_config(repo_path)
@@ -89,8 +86,8 @@ def git_commit(
     confirm_every: int = fix_cfg.get("confirm_every", 5)
 
     # Load session state
-    session = _load_session(repo_path)
-    fix_count: int = session.get("fix_count", 0)
+    session_key = _session_key(repo_path)
+    fix_count: int = _fix_counts.get(session_key, 0)
 
     # Enforce session budget
     if fix_count >= session_budget:
@@ -133,18 +130,12 @@ def git_commit(
             return _err(f"Cannot checkout branch '{branch}': {e}")
 
     # Stage files
-    repo_root = Path(repo_path)
     try:
-        if files is None:
-            repo.git.add(A=True)
-        else:
-            relative: list[str] = [
-                str(Path(fp).relative_to(repo_root))
-                if Path(fp).is_absolute()
-                else fp
-                for fp in files
-            ]
-            repo.index.add(relative)
+        relative: list[str] = [
+            str(Path(fp).relative_to(repo_root)) if Path(fp).is_absolute() else fp
+            for fp in files
+        ]
+        repo.index.add(relative)
     except Exception as e:
         return _err(f"Failed to stage files: {e}")
 
@@ -155,16 +146,14 @@ def git_commit(
     except Exception as e:
         return _err(f"Failed to commit: {e}")
 
-    # Persist incremented fix count atomically
-    session["fix_count"] = fix_count + 1
-    _save_session(repo_path, session)
+    _fix_counts[session_key] = fix_count + 1
 
     try:
         current_branch = repo.active_branch.name
     except TypeError:
         current_branch = commit.hexsha[:8]
 
-    files_committed = files if files is not None else list(commit.stats.files.keys())
+    files_committed = files
 
     return {
         "success": True,

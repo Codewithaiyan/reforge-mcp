@@ -1,38 +1,14 @@
 """Automated Fix Tool."""
 
 import os
+import shlex
+import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 from ..utils.diff import apply_diff, rollback
 from ..utils.security import SecurityError, validate_path, validate_test_command
-
-
-def _git_stash(repo_root: str) -> bool:
-    try:
-        r = subprocess.run(
-            ["git", "stash"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return r.returncode == 0 and "No local changes to save" not in r.stdout
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return False
-
-
-def _git_stash_pop(repo_root: str) -> None:
-    try:
-        subprocess.run(
-            ["git", "stash", "pop"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
 
 
 def write_fix(
@@ -46,7 +22,7 @@ def write_fix(
     Apply a unified diff to a file and optionally run tests to verify safety.
 
     Returns {success, test_output, error, rolled_back}.
-    Rolls back automatically (via .bak + git stash pop) if tests fail.
+    Rolls back automatically from the .bak copy if tests fail.
     """
     if repo_root is None:
         repo_root = os.getcwd()
@@ -58,7 +34,7 @@ def write_fix(
 
     if test_command is not None:
         try:
-            validate_test_command(test_command, allowed_test_commands or [])
+            validate_test_command(test_command, allowed_test_commands)
         except SecurityError as e:
             return {"success": False, "test_output": None, "error": str(e), "rolled_back": False}
 
@@ -75,14 +51,9 @@ def write_fix(
             "rolled_back": False,
         }
 
-    # Git stash saves any pre-existing dirty state; best-effort, not required
-    stash_created = _git_stash(repo_root)
-
     if not apply_diff(str(resolved), diff_str):
         rollback(str(resolved))
         bak.unlink(missing_ok=True)
-        if stash_created:
-            _git_stash_pop(repo_root)
         return {
             "success": False,
             "test_output": None,
@@ -92,39 +63,59 @@ def write_fix(
 
     if test_command is None:
         bak.unlink(missing_ok=True)
-        if stash_created:
-            _git_stash_pop(repo_root)
         return {"success": True, "test_output": None, "error": None, "rolled_back": False}
 
+    # No shell: the command is split here and the executable resolved by name,
+    # so nothing in it can be interpreted as shell syntax. shutil.which also
+    # finds the .cmd shims that npm and yarn install on Windows.
     try:
-        proc = subprocess.run(
-            test_command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=repo_root,
-        )
-        test_output = proc.stdout + proc.stderr
-        passed = proc.returncode == 0
-    except subprocess.TimeoutExpired:
+        argv = shlex.split(test_command)
+    except ValueError as e:
+        argv = []
+        test_output = f"Could not parse test command: {e}"
+
+    executable = shutil.which(argv[0]) if argv else None
+
+    if executable is None:
         passed = False
-        test_output = "Test command timed out"
-    except (subprocess.SubprocessError, OSError) as e:
-        passed = False
-        test_output = str(e)
+        if argv:
+            test_output = f"Test command not found: {argv[0]}"
+    else:
+        # Output goes to a file rather than a pipe, and stdin is closed. Both
+        # matter for a command we do not control: a test runner that leaves a
+        # grandchild holding an inherited pipe makes the communicate() after a
+        # timeout block forever - the timeout kills the child, not the pipe -
+        # and an inherited stdin lets anything that prompts wait for input that
+        # will never arrive. Either one hangs write_fix with no way out.
+        with tempfile.TemporaryFile() as out:
+            note = ""
+            try:
+                proc = subprocess.run(
+                    [executable, *argv[1:]],
+                    stdin=subprocess.DEVNULL,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    timeout=120,
+                    cwd=repo_root,
+                )
+                passed = proc.returncode == 0
+            except subprocess.TimeoutExpired:
+                passed = False
+                note = "\nTest command timed out after 120s"
+            except (subprocess.SubprocessError, OSError) as e:
+                passed = False
+                note = f"\n{e}"
+
+            out.seek(0)
+            test_output = out.read().decode("utf-8", "replace") + note
 
     if passed:
         bak.unlink(missing_ok=True)
-        if stash_created:
-            _git_stash_pop(repo_root)
         return {"success": True, "test_output": test_output, "error": None, "rolled_back": False}
 
     # Tests failed — restore original file
     rollback(str(resolved))
     bak.unlink(missing_ok=True)
-    if stash_created:
-        _git_stash_pop(repo_root)
     return {
         "success": False,
         "test_output": test_output,

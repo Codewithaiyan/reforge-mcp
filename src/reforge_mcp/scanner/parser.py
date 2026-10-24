@@ -121,6 +121,7 @@ class ParseResult:
         imports: All import statements found
         total_lines: Total lines in the file
         error: Error message if parsing failed, None otherwise
+        references: Every name this file uses rather than defines
     """
 
     file: str
@@ -130,6 +131,7 @@ class ParseResult:
     imports: tuple[ImportInfo, ...]
     total_lines: int
     error: str | None = None
+    references: tuple[str, ...] = ()
 
 
 class LanguageAdapter(Protocol):
@@ -172,6 +174,94 @@ def _run_captures(query: Query, root: "Node") -> list[tuple["Node", str]]:
             pairs.append((node, name))
     pairs.sort(key=lambda x: x[0].start_byte)
     return pairs
+
+
+# Node types whose text names something, in all four grammars.
+_NAME_NODE_TYPES = frozenset(
+    {"identifier", "property_identifier", "field_identifier", "type_identifier"}
+)
+
+# Nodes that introduce a name: their first name child is the definition itself,
+# not a use of it.
+_DEFINITION_NODE_TYPES = frozenset(
+    {
+        "function_definition",
+        "function_declaration",
+        "function_signature",
+        "generator_function_declaration",
+        "method_definition",
+        "method_declaration",
+        "class_definition",
+        "class_declaration",
+        "interface_declaration",
+        "type_alias_declaration",
+    }
+)
+
+# Names inside these are prose or data, not code.
+_OPAQUE_NODE_TYPES = frozenset(
+    {
+        "comment",
+        "string",
+        "template_string",
+        "raw_string_literal",
+        "interpreted_string_literal",
+    }
+)
+
+
+def _string_values(node: "Node") -> list[str]:
+    """Every string literal under a node, with its quotes removed."""
+    out: list[str] = []
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n.type in _OPAQUE_NODE_TYPES:
+            out.append(n.text.decode("utf-8", "replace").strip("\"'` "))
+        else:
+            stack.extend(n.children)
+    return out
+
+
+def _collect_references(root: "Node") -> tuple[str, ...]:
+    """
+    Collect every name this file uses rather than defines.
+
+    Dead-code detection subtracts definitions from this set, so a definition must
+    never count as a reference to itself — counting `def foo(` as a call to `foo`
+    is exactly what made every function look reachable before. Comments and
+    string literals are skipped for the same reason: a docstring mentioning
+    `foo()` is not a use of it.
+    """
+    refs: set[str] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+
+        if node.type in _OPAQUE_NODE_TYPES:
+            continue
+
+        if node.type in _NAME_NODE_TYPES:
+            refs.add(node.text.decode("utf-8", "replace"))
+            continue
+
+        # `__all__ = ["foo"]` is a public export, so those strings are uses.
+        if (
+            node.type == "assignment"
+            and node.children
+            and node.children[0].text == b"__all__"
+        ):
+            refs.update(_string_values(node))
+            continue
+
+        expecting_own_name = node.type in _DEFINITION_NODE_TYPES
+        for child in node.children:
+            if expecting_own_name and child.type in _NAME_NODE_TYPES:
+                expecting_own_name = False
+                continue
+            stack.append(child)
+
+    return tuple(sorted(refs))
 
 
 class PythonAdapter:
@@ -254,7 +344,7 @@ class PythonAdapter:
             ) @import
 
             (import_from_statement
-                module_name: (dotted_name) @module
+                module_name: [(dotted_name) (relative_import)] @module
             ) @from_import
             """,
         )
@@ -270,16 +360,17 @@ class PythonAdapter:
                     name_node = child
                 elif child.type == "block":
                     body_node = child
-                elif child.type == "decorator":
-                    # Extract decorator name (e.g., @app.route -> "app.route")
-                    dec_parts = []
-                    for dec_child in child.children:
-                        if dec_child.type == "identifier":
-                            dec_parts.append(dec_child.text.decode("utf-8"))
-                        elif dec_child.type == ".":
-                            dec_parts.append(".")
-                    if dec_parts:
-                        decorators.append("".join(dec_parts))
+
+            # Decorators hang off the enclosing decorated_definition, never off
+            # the function_definition itself.
+            parent = func_node.parent
+            if parent is not None and parent.type == "decorated_definition":
+                for child in parent.children:
+                    if child.type == "decorator":
+                        # "@app.route('/x')" -> "app.route"; the argument list is
+                        # not part of the name we match against
+                        text = child.text.decode("utf-8").lstrip("@").strip()
+                        decorators.append(text.split("(", 1)[0].strip())
 
             if name_node and body_node:
                 name = name_node.text.decode("utf-8")
@@ -318,11 +409,13 @@ class PythonAdapter:
                         func_info = extract_function(child)
                         if func_info:
                             functions.append(func_info)
-                            processed_nodes.add(id(child))
+                            # node.id, not id(node): py-tree-sitter mints a new
+                            # wrapper object per access, so Python ids never match
+                            processed_nodes.add(child.id)
 
         for node, capture_name in _run_captures(func_query, root):
             if capture_name == "function":
-                if id(node) in processed_nodes:
+                if node.id in processed_nodes:
                     continue
                 func_info = extract_function(node)
                 if func_info:
@@ -371,34 +464,43 @@ class PythonAdapter:
 
         for node, capture_name in _run_captures(import_query, root):
             if capture_name == "import":
-                # Bare import: import os
-                name_parts = []
+                # Bare import: "import os", "import a.b", "import os, sys".
+                # One record per module: collecting every identifier into a
+                # single record made "import a.b" and "import a, b"
+                # indistinguishable, so neither could be resolved to a file.
                 for child in node.children:
-                    if child.type == "dotted_name":
-                        for name_child in child.children:
-                            if name_child.type == "identifier":
-                                name_parts.append(name_child.text.decode("utf-8"))
-                if name_parts:
-                    imports.append(
-                        ImportInfo(
-                            names=tuple(name_parts),
-                            from_module=None,
-                            file=file_path,
-                            line=node.start_point[0] + 1,
-                            language="python",
+                    if child.type != "dotted_name":
+                        continue
+                    parts = [
+                        c.text.decode("utf-8")
+                        for c in child.children
+                        if c.type == "identifier"
+                    ]
+                    if parts:
+                        imports.append(
+                            ImportInfo(
+                                names=tuple(parts),
+                                from_module=None,
+                                file=file_path,
+                                line=node.start_point[0] + 1,
+                                language="python",
+                            )
                         )
-                    )
             elif capture_name == "from_import":
-                # From import: from os import Path
-                module_name = None
+                # From import: from os import Path, or from ..pkg.mod import X
+                # Read the module off its named field: picking the first
+                # dotted_name child instead mistakes the *imported name* for the
+                # module whenever the module is relative.
+                module_node = node.child_by_field_name("module_name")
+                module_name = (
+                    module_node.text.decode("utf-8") if module_node is not None else None
+                )
                 import_names = []
 
                 for child in node.children:
-                    if child.type == "dotted_name" and not module_name:
-                        module_name = ".".join(
-                            c.text.decode("utf-8") for c in child.children
-                        )
-                    elif child.type in ("dotted_name", "aliased_import"):
+                    if module_node is not None and child.id == module_node.id:
+                        continue
+                    if child.type in ("dotted_name", "aliased_import"):
                         for name_child in child.children:
                             if name_child.type == "identifier":
                                 import_names.append(name_child.text.decode("utf-8"))
@@ -419,6 +521,7 @@ class PythonAdapter:
         return ParseResult(
             file=file_path,
             language="python",
+            references=_collect_references(root),
             functions=tuple(functions),
             classes=tuple(classes),
             imports=tuple(imports),
@@ -646,6 +749,7 @@ class JavaScriptAdapter:
         return ParseResult(
             file=file_path,
             language=self._name,
+            references=_collect_references(root),
             functions=tuple(functions),
             classes=tuple(classes),
             imports=tuple(imports),
@@ -812,6 +916,7 @@ class GoAdapter:
         return ParseResult(
             file=file_path,
             language="go",
+            references=_collect_references(root),
             functions=tuple(functions),
             classes=tuple(classes),
             imports=tuple(imports),
