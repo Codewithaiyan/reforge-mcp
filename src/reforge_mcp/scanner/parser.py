@@ -318,11 +318,13 @@ class PythonAdapter:
                         func_info = extract_function(child)
                         if func_info:
                             functions.append(func_info)
-                            processed_nodes.add(id(child))
+                            # node.id, not id(node): py-tree-sitter mints a new
+                            # wrapper object per access, so Python ids never match
+                            processed_nodes.add(child.id)
 
         for node, capture_name in _run_captures(func_query, root):
             if capture_name == "function":
-                if id(node) in processed_nodes:
+                if node.id in processed_nodes:
                     continue
                 func_info = extract_function(node)
                 if func_info:

@@ -33,8 +33,8 @@ only ever contain the files that were named.
 
 Order matters: R8 and R7 are parser fixes the rest depend on.
 
-- [ ] **R8** Stop emitting decorated functions twice; dedupe by `(file, start_line, name)` in `ParseResult`
-- [ ] **R8b** Test: `parse_file` on a file with N decorated defs returns N functions
+- [x] **R8** Root cause was `id(child)` vs `child.id` — the dedupe set already existed but keyed off Python object ids, and py-tree-sitter mints a new wrapper per access, so it never matched. Two words changed; `server.py` 21 -> 11 functions, duplicate groups 12 -> 1
+- [x] **R8b** Tests in `tests/test_parser.py` — decorated defs counted once, and two same-named defs in one file both survive the dedupe
 - [ ] **R7** Populate `FunctionInfo.decorators` from `decorated_definition`
 - [ ] **R7b** Test: an `@app.route` function never called directly is not reported dead
 - [ ] **R4** Rebuild reference collection on the tree-sitter AST (calls, attributes, bare identifiers); delete the regex path

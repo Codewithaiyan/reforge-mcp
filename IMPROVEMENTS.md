@@ -179,9 +179,28 @@ directly.
   itself (see R9)
 - every ratio-based health deduction is computed against an inflated denominator
 
-**Fix:** the query matches both the `decorated_definition` and the inner
-`function_definition`. Keep one. Belt-and-braces: dedupe by
-`(file, start_line, name)` before returning `ParseResult`.
+**Fixed 2026-10-24.** My diagnosis above was wrong about the mechanism, and the
+real cause is worth recording. The adapter *already had* the right design: a
+`processed_nodes` set marks each `function_definition` reached through the
+`decorated_definition` query so the plain `function_definition` query can skip
+it. It keyed that set on `id(child)` — the **Python object** id. py-tree-sitter
+mints a fresh `Node` wrapper on every `.children` access, so the same underlying
+node has a different `id()` each time it is reached and the skip never fired.
+Confirmed directly:
+
+```
+same python object : False
+id() equal         : False
+node.id equal      : True
+```
+
+The fix is `child.id` instead of `id(child)` in two places — `Node.id` is the
+stable tree-sitter node identity. No dedupe pass on `ParseResult` was needed.
+`server.py` went from 21 reported functions to its real 11, and the self-scan's
+duplicate groups fell from 12 to 1.
+
+Only the Python adapter had this pattern; the JS/TS/Go adapters have no
+`decorated_definition` handling, so they were never affected.
 
 ### R9. Duplicate detection reports noise
 `src/reforge_mcp/scanner/duplicates.py:150`
@@ -193,9 +212,17 @@ directly.
   `def get_language(self): return Language(...)` — correct interface
   implementations, not refactorable duplication.
 
-**Fix:** dedupe by `(file, start_line)`, require a minimum body size (about 3
-statements or 5 normalised lines) and skip single-`return` bodies. Also skip
-groups whose members are all overrides of the same base-class method.
+**Partly fixed 2026-10-24 by R8** — the self-duplicates are gone and the count
+is down from 12 groups to 1. The survivor is the real case: the four adapters'
+`get_language` methods.
+
+**Fix for what remains:** skip groups whose members are all overrides of the
+same interface method. Note the constraint before reaching for a blanket
+"minimum body size" filter, which was my first instinct: `tests/test_scanner.py`
+depends on a genuine cross-file duplicate whose body is a single
+`return sum(items)`, so filtering every one-line body would hide real
+duplication as well as this noise. Same-name-same-signature across sibling
+classes is the signal to suppress, not body length.
 
 ### R10. `detect_similar_functions` is a stub, and its dependency costs ~2 GB
 `src/reforge_mcp/scanner/duplicates.py:249`
