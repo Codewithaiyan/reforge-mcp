@@ -81,7 +81,7 @@ that a test does not cover.
 ## M5 — Found by users
 
 - [x] **R26** Methods overriding a base class defined outside the repo were reported dead — `do_GET` on a `BaseHTTPRequestHandler` subclass and the same pattern in React, Django and unittest. `ClassInfo` now carries base names and externally-derived classes have their methods treated as referenced. A repo-local base still yields reportable overrides
-- [ ] **R27** `scan_repo` reports `total_files` with no indication that files were skipped for having no adapter, so a 7-file result on a 30-file Kotlin/C++ repo reads as a verdict on the whole thing
+- [x] **R27** (0.2.1) `scan_repo` reports `total_files` with no indication that files were skipped for having no adapter, so a 7-file result on a 30-file Kotlin/C++ repo reads as a verdict on the whole thing
 
 ## M3b — Found by CI
 
@@ -95,7 +95,7 @@ that a test does not cover.
 - [x] **R18b** Sample output is a real run against a four-file demo repo, and generating it is what uncovered R24
 - [x] **R22** Replaced with a Status section. The original premise — "while P1 work is open" — no longer holds, so it now says what is verified and that the JS/TS/Go adapters are far less exercised than Python
 - [-] **R20** Dropped. The stated reason was that our own tool flags the file, which is vanity rather than a defect; moving ~900 lines of working parser risks what R4-R8 just fixed, for no user benefit. Reopen only if it blocks real work
-- [ ] Tag `0.2.0` and publish
+- [x] Tag `0.2.0` and publish
 
 **Exit:** every claim in the README is reproducible by a user in five minutes.
 
