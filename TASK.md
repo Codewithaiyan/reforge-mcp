@@ -70,7 +70,7 @@ function nothing calls.
 - [x] **R13** `DEFAULT_ALLOWED_TEST_COMMANDS` in `security.py`, used whenever the caller passes no allowlist or an empty one
 - [x] **R14** `shlex.split` + `shutil.which` + no shell. `which` also resolves the `.cmd` shims npm and yarn install on Windows, which a bare argv would have missed
 - [x] **R11** Solved by deletion instead: the counter is a per-repo dict in the server process, so it resets on restart. No `session_id`, no `started_at`, no reset tool — the server process is the session, and the error message's "start a new session" is now literally true
-- [ ] **R19** End-to-end test: scan -> apply -> test -> commit, plus the three rollback paths
+- [x] **R19** `tests/test_end_to_end.py` — scan finds a real dead function, `get_chunk` reads it, `write_fix` removes it gated on the project's own pytest run, `git_commit` commits only that file, and a rescan shows the defect gone with a clean tree. Plus failing-tests rollback, out-of-range diff, stale-context diff, and no `.bak`/`.tmp` left behind
 - [x] **R16** Skipped behind a probe that actually tries to create a symlink. Suite is now fully green: 103 passed, 1 skipped, 0 failed
 - [ ] **R17** CI matrix: ubuntu/macos/windows x 3.11/3.12/3.13; normalise report paths to forward slashes
 

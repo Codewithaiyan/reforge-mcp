@@ -539,9 +539,25 @@ There is no test that scans a scratch repo, applies a real diff, runs tests, and
 asserts the file is correct afterwards — or that a *bad* diff leaves the file
 byte-identical. R1 would have been caught on day one by the latter.
 
-**Fix:** one integration test with a temp git repo: good diff applies; bad diff
-is rejected and the file is unchanged; failing test command triggers rollback;
-`rolled_back` is accurate in every case.
+**Fixed 2026-10-24.** `tests/test_end_to_end.py` drives the chain Claude
+actually drives, on a temp git repo holding a real defect: `scan_repo` reports
+`unused_helper` as dead, `get_chunk` reads those lines, `write_fix` removes them
+gated on the project's own `pytest` run, `git_commit` commits `calc.py` and
+nothing else, and a rescan returns no dead code against a clean working tree.
+
+Four failure paths beside it:
+
+- a diff that breaks `add()` makes the project's tests fail, and the file comes
+  back byte-identical with `rolled_back: true`
+- a hunk pointing past the end of the file changes nothing
+- a **stale** diff — right line numbers, content that no longer matches — changes
+  nothing. This is the case a slightly out-of-date plan produces, and the one
+  that used to corrupt files
+- no `.bak` or `.tmp` is left behind after a successful fix
+
+It also caught a documentation-level mistake of my own: I had assumed
+`get_chunk` returns `content`, and it returns `source`. Worth knowing for the
+README rewrite in R18.
 
 ### R20. `parser.py` is 1,061 lines and flagged by the project's own tool
 
