@@ -48,7 +48,7 @@ Order matters: R8 and R7 are parser fixes the rest depend on.
 - [x] **R6** Two causes, not one: the loop-ordering bug *and* relative imports never being captured by the Python adapter at all. Both fixed; self-scan goes from 0 to 24 correct edges
 - [x] **R6b** Tests in `tests/test_dep_graph.py` (7 cases) — sibling, relative and package imports resolve; external imports do not; a two-file cycle is reported; repeated imports collapse to one edge
 - [x] **R9** Phantom groups were already gone with R8; the one real-but-unactionable group (three adapters' `get_language`) is now suppressed by a deliberately narrow test — every member must be a one-line *method*. Also deleted `hash_body` + `normalize_code`, a dead second copy of `parser._hash_body`, and replaced the O(groups x functions) `line_count` lookup with an index. Self-scan: 0 groups
-- [ ] **R15** Fix god-file export counts, exclude test paths, move thresholds to config
+- [x] **R15** Methods no longer count as exports (a file with one class and thirty methods exports one name), and test files are skipped. Self-scan: 6 god files -> 3, all genuine. Thresholds stay as function arguments, not config — see IMPROVEMENTS.md for why
 
 **Exit:** self-scan finds `extract_call_sites` as dead code, reports 0 phantom
 duplicate groups, and draws a non-empty dependency graph.

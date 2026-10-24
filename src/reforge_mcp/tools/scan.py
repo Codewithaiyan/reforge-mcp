@@ -273,6 +273,24 @@ def _detect_subprojects(root: Path) -> list[dict[str, str]]:
     return subprojects
 
 
+_TEST_FILE_SUFFIXES = (".test.js", ".test.ts", ".spec.js", ".spec.ts", "_test.go")
+
+
+def _is_test_file(file_path: str) -> bool:
+    """
+    Is this a test file?
+
+    Test suites are held to different norms: thirty small test functions in one
+    file is good practice, not a god object.
+    """
+    path = Path(file_path)
+    if "tests" in path.parts or "test" in path.parts or "__tests__" in path.parts:
+        return True
+    if path.name.startswith("test_") or path.name.endswith("_test.py"):
+        return True
+    return path.name.endswith(_TEST_FILE_SUFFIXES)
+
+
 def _find_god_files(
     parse_results: list,
     max_lines: int = 500,
@@ -283,7 +301,15 @@ def _find_god_files(
 
     GOD FILE CRITERIA:
     - >500 lines of code: Hard to understand, likely does too much
-    - >10 exports (functions + classes): Too many responsibilities
+    - >10 exports (top-level functions + classes): Too many responsibilities
+
+    Methods do not count towards the export total. A file holding one class with
+    thirty methods exports one name, and counting each method made every
+    class-heavy module look like a god file.
+
+    Both thresholds are round numbers rather than discoveries - they are
+    arguments so a caller can disagree, and the report carries the raw `lines`
+    and `exports` so a reader can judge for themselves.
 
     WHY THIS MATTERS:
     God files violate single responsibility principle. They're:
@@ -295,10 +321,12 @@ def _find_god_files(
     god_files = []
 
     for result in parse_results:
-        if result.error:
+        if result.error or _is_test_file(result.file):
             continue
 
-        export_count = len(result.functions) + len(result.classes)
+        method_names = {m for cls in result.classes for m in cls.methods}
+        top_level = [f for f in result.functions if f.name not in method_names]
+        export_count = len(top_level) + len(result.classes)
 
         if result.total_lines > max_lines or export_count > max_exports:
             god_files.append(

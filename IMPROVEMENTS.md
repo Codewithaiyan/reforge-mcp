@@ -430,8 +430,30 @@ allowlist. Strictly simpler and strictly safer.
 judged by production thresholds. 500 lines / 10 exports are presented as facts
 with no justification or override.
 
-**Fix:** fix the count via R8, exclude test paths (or report them in a separate
-bucket) and move both thresholds into config.
+**Fixed 2026-10-24.** R8 fixed the double-count (`server.py` 21 -> 11), but a
+second counting defect survived it: `export_count` was
+`len(functions) + len(classes)`, which counts **every method** as an export. A
+file holding one class with thirty methods read as thirty-one exports, so any
+class-heavy module was guaranteed to trip the threshold — that is why
+`parser.py` showed 36 and `test_security.py` 24. Exports are now top-level
+definitions only (functions whose names are not in any class's method list,
+plus the classes themselves).
+
+Test files are skipped: thirty small test functions in one file is good
+practice, not a god object. `_is_test_file` covers `tests/` directories,
+`test_*.py`, `*_test.py`, `*_test.go` and `.test/.spec.{js,ts}`.
+
+**Self-scan: 6 god files -> 3**, all genuine (`parser.py` at 1161 lines,
+`scan.py` at 579, `server.py` at 11 exports). Health score 75.0 -> 82.8.
+
+**Thresholds stayed as function arguments rather than moving to config**, which
+is a change from the plan above. The complaint was that 500 and 10 are presented
+as facts with no justification — the fix for that is to say so, which the
+docstring now does, not to add a config knob nobody has asked for. They are
+already overridable by a caller, and the report carries the raw `lines` and
+`exports` so a reader can disagree with the verdict. `server.py` being flagged
+for 11 exports against a threshold of 10 is exactly that case, and it is left
+in the report rather than special-cased.
 
 ### R16. Windows-only test failure
 `tests/test_security.py` — `test_symlink_to_outside_blocked`
