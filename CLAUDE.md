@@ -60,7 +60,7 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 
 [IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of every
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
-fixes. R1-R51 are closed as of 0.3.0. What remains true:
+fixes. R1-R53 are closed as of 0.3.1. What remains true:
 
 - **TypeScript and Go only began working in 0.3.0** (R46, R47): their
   queries had never compiled, so every file of those languages returned a
