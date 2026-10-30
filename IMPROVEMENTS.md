@@ -1358,3 +1358,65 @@ functions.
   that way.
 - `axios` reports 3 unresolved relative imports, a genuine resolver gap now
   visible rather than silent.
+
+
+## R52 — a Kotlin dependency graph was empty and said it was fine
+
+**Reported by:** the 0.3.0 sweep, recorded as a known gap rather than fixed at
+the time. okhttp reported 0 edges, 6,869 external imports and **0 unresolved
+relative imports** — which by R32's own diagnostic reads as "this code has no
+internal imports", about a library that imports its own packages on nearly
+every file.
+
+That made it the worst remaining honesty hole: the mechanism built to stop an
+empty graph being misread was itself reporting a clean bill.
+
+**Root cause:** `_resolve_import_to_file` resolves an import by treating it as
+a path, relative or dotted, against the set of parsed files. A Kotlin import is
+neither: `import okhttp3.internal.platform.Platform` names a *declaration in a
+package*, and the file it lives in can be anywhere. Nothing mapped a package to
+a file, so every Kotlin import fell through to "external".
+
+**Resolution:** `ParseResult` now carries the file's declared `package`, read
+from the `package_header`, and the graph builder indexes every file by its
+package and by the fully-qualified name of each declaration in it.
+`_resolve_package_import` then handles the three forms that occur:
+
+- `app.platform.Platform` — a declaration, resolved by fully-qualified name
+- `app.util.*` — the whole package, so an edge to every file in it
+- `app.config.Config.DEFAULT` — a member, resolved to the declaration above it
+
+The index is consulted only for files that declare a package themselves, so a
+Python dotted import can never collide with a Kotlin fully-qualified name.
+
+okhttp: 0 edges to **1,632**, external imports 6,869 to 4,768, and 64 cycles
+that were previously invisible. MyCam: 2 edges to 89, its Kotlin app finally
+connected to its own test and UI files.
+
+**Still external, correctly:** `android.os.Bundle` and `kotlin.math.roundToInt`
+are outside the repository and stay uncounted as edges.
+
+**Not done:** Go. A Go import is a module path (`github.com/spf13/cobra/...`)
+which needs the module name from `go.mod` plus a directory mapping. cobra is a
+single package and genuinely has no internal imports, so the 190 external
+imports it reports are honest.
+
+## R53 — a Kotlin dependency cycle cost health points for being idiomatic
+
+**Evidence:** found immediately by R52. With Kotlin edges resolving, okhttp's 64
+cycles appeared and its health score fell from 66.0 to 46.0 — the full 20-point
+cycle penalty, for ordinary Kotlin.
+
+**Root cause:** the penalty was written for Python and JavaScript, where an
+import executes at module load and a cycle can raise at runtime. The docstring
+says so. Kotlin, Java and Go compile a module as a whole, and circular
+references between files are normal — within a package Kotlin needs no import
+at all.
+
+**Resolution:** `scan_repo` still reports every cycle, since the information is
+useful, but only a cycle touching a file in a cycle-sensitive language costs
+points. A cycle is penalised if **any** member is `.py`, `.js`, `.jsx`, `.mjs`,
+`.cjs`, `.ts` or `.tsx`, so a mixed cycle still counts.
+
+okhttp is back to 66.0 with its 64 cycles reported. Flask keeps its 37 Python
+cycles and its 39.1, which is the right answer for a language where they bite.

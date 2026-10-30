@@ -124,6 +124,8 @@ class ParseResult:
         total_lines: Total lines in the file
         error: Error message if parsing failed, None otherwise
         references: Every name this file uses rather than defines
+        package: Declared package, for languages whose imports are
+            absolute package paths rather than file paths (Kotlin)
     """
 
     file: str
@@ -134,6 +136,7 @@ class ParseResult:
     total_lines: int
     error: str | None = None
     references: tuple[str, ...] = ()
+    package: str | None = None
 
 
 class LanguageAdapter(Protocol):
@@ -990,6 +993,17 @@ class KotlinAdapter:
         classes: list[ClassInfo] = []
         imports: list[ImportInfo] = []
 
+        # A Kotlin import names a package, not a path, so the dependency
+        # graph needs to know which package this file declares.
+        package = None
+        for child in root.children:
+            if child.type == "package_header":
+                for part in child.children:
+                    if part.type == "qualified_identifier":
+                        package = part.text.decode("utf-8", "replace")
+                        break
+                break
+
         query = Query(
             self._language,
             """
@@ -1078,6 +1092,7 @@ class KotlinAdapter:
             imports=tuple(imports),
             total_lines=total_lines,
             error=None,
+            package=package,
         )
 
 

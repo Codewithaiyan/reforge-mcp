@@ -67,10 +67,15 @@ fixes. R1-R51 are closed as of 0.3.0. What remains true:
   parse error, and one rejected query broke later parses too — a single
   `.ts` file cost axios all 277 of its files. Treat both as the least
   proven adapters.
-- **A Kotlin dependency graph is empty and says it is fine.** Kotlin
-  imports are absolute package paths and nothing maps a package to a
-  file, so okhttp reports 0 edges with 0 unresolved relative imports —
-  which by R32's diagnostic reads as "no internal imports" and is false.
+- **A Kotlin import resolves through its package, not its path** (R52).
+  Each file's declared package is indexed with the fully-qualified name
+  of everything it declares; the index is consulted only for files that
+  declare a package, so Python dotted imports cannot collide with it.
+  **Go imports are still unresolved** — a module path needs `go.mod`.
+- **A dependency cycle only costs health points in a language where it
+  bites** (R53): Python and JavaScript run imports at module load, while
+  Kotlin, Java and Go compile a module whole and circular file references
+  are idiomatic. Every cycle is still reported by `scan_repo`.
 - **Only Python, JavaScript, TypeScript, Go and Kotlin are parsed.** Everything else is
   counted in `summary.unscanned_source_files` and nothing more. A six-file
   result on a Kotlin and C++ repo is a report on six files — check `coverage`

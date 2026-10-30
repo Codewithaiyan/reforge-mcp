@@ -426,6 +426,20 @@ def _build_dependency_graph(
     # seen earlier in iteration order, which is why no edge was ever found.
     all_files: set[str] = {r.file for r in parse_results if not r.error}
 
+    # Where a language's imports name a package instead of a path, an import
+    # can only be resolved against what each file declares. Without this,
+    # okhttp reported 0 edges and 6869 external imports, which read as
+    # "this code has no internal imports" about a library that imports its
+    # own packages on nearly every file.
+    by_fqn: dict[str, str] = {}
+    by_package: dict[str, list[str]] = {}
+    for result in parse_results:
+        if result.error or not result.package:
+            continue
+        by_package.setdefault(result.package, []).append(result.file)
+        for decl in (*result.classes, *result.functions):
+            by_fqn[f"{result.package}.{decl.name}"] = result.file
+
     file_imports: dict[str, list[str]] = {}
     external_imports = 0
     unresolved_relative = 0
@@ -443,6 +457,18 @@ def _build_dependency_graph(
             module = imp.from_module or ".".join(imp.names)
             if not module or module == "*":
                 continue
+            # only for a file that declares a package, so a Python dotted
+            # module can never collide with a Kotlin fully-qualified name
+            if result.package:
+                package_targets = _resolve_package_import(
+                    module, by_fqn, by_package
+                )
+                if package_targets:
+                    imported_files.extend(
+                        t for t in package_targets if t != result.file
+                    )
+                    continue
+
             target = _resolve_import_to_file(
                 module, Path(result.file).parent, all_files, result.language
             )
@@ -555,6 +581,33 @@ def _count_unscanned_sources(
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
+def _resolve_package_import(
+    module: str, by_fqn: dict[str, str], by_package: dict[str, list[str]]
+) -> list[str]:
+    """
+    Resolve an absolute package import against the packages this repo declares.
+
+    `import okhttp3.internal.platform.Platform` names a declaration, not a
+    file, so it is matched against each file's declared package plus the names
+    it defines. A star import depends on every file in the package. A member
+    import - `a.b.Thing.CONSTANT` - resolves to the declaration above it.
+
+    Returns an empty list for anything outside the repository, which is most
+    imports: android.os.Bundle and kotlin.math.roundToInt stay external.
+    """
+    if module.endswith(".*"):
+        return list(by_package.get(module[:-2], ()))
+    if module in by_fqn:
+        return [by_fqn[module]]
+    # the grammar drops the star, so `import a.b.*` arrives as the bare package
+    if module in by_package:
+        return list(by_package[module])
+    parent, _, _ = module.rpartition(".")
+    if parent and parent in by_fqn:
+        return [by_fqn[parent]]
+    return []
+
+
 def _resolve_import_to_file(
     import_path: str, current_dir: Path, known_files: set[str], language: str = ""
 ) -> str | None:
@@ -608,6 +661,18 @@ def _resolve_import_to_file(
     return None
 
 
+# Languages where a cycle between files is a real hazard: the import runs at
+# module load, so a cycle can raise at runtime. Kotlin, Java and Go compile a
+# module as a whole and circular file references are idiomatic - okhttp has 64
+# and lost 20 points of health for writing ordinary Kotlin.
+_CYCLE_SENSITIVE_EXTENSIONS = (".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+
+
+def _cycle_is_a_defect(cycle: list[str]) -> bool:
+    """Whether a dependency cycle is a problem in any language it touches."""
+    return any(f.endswith(_CYCLE_SENSITIVE_EXTENSIONS) for f in cycle)
+
+
 def get_health_score(
     root_path: str,
     state_path: str | None = None,
@@ -631,12 +696,15 @@ def get_health_score(
     duplicates = scan.get("duplicates", [])
     god_files = scan.get("god_files", [])
     circular = scan.get("dep_graph", {}).get("circular", [])
+    penalised_cycles = [c for c in circular if _cycle_is_a_defect(c)]
 
     dead_code_ratio = len(dead_code) / total_functions
     dup_symbols = sum(len(g.get("locations", [])) for g in duplicates)
     duplicate_ratio = dup_symbols / total_functions
     god_file_count = len(god_files)
-    circular_count = len(circular)
+    # Reported in full by scan_repo; only the ones that are actually a
+    # problem cost points. See _cycle_is_a_defect.
+    circular_count = len(penalised_cycles)
 
     score = 100.0
     score -= min(30.0, duplicate_ratio * 100)

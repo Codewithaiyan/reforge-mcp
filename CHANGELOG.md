@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.3.1 - 2026-10-30
+
+The two gaps the 0.3.0 sweep found and left open.
+
+### Fixed - a Kotlin dependency graph was empty and claimed to be fine
+
+okhttp reported 0 edges, 6,869 external imports and **0 unresolved relative
+imports** — which by the 0.2.5 diagnostic reads as "this code has no internal
+imports", about a library that imports its own packages constantly. The
+mechanism built to stop an empty graph being misread was itself giving a clean
+bill of health.
+
+Imports were resolved by treating them as paths. A Kotlin import is not a path:
+`import okhttp3.internal.platform.Platform` names a declaration in a package,
+and the file can be anywhere. Nothing mapped a package to a file.
+
+Each file's declared `package` is now read and indexed, along with the
+fully-qualified name of every declaration in it. Three forms resolve:
+
+- `app.platform.Platform` — a declaration
+- `app.util.*` — the whole package, an edge to every file in it
+- `app.config.Config.DEFAULT` — a member, to its declaring file
+
+okhttp: **0 edges to 1,632**, external imports down to 4,768. A mixed
+Kotlin/JS/Python repository went from 2 edges to 89. `android.os.Bundle` stays
+external, correctly.
+
+The index is only consulted for files that declare a package, so a Python
+dotted import cannot collide with a Kotlin fully-qualified name.
+
+Go is not covered: a Go import is a module path needing `go.mod`, and cobra
+genuinely has no internal imports, so its 190 external imports are honest.
+
+### Fixed - a Kotlin cycle cost health points for being idiomatic
+
+With Kotlin edges resolving, okhttp's 64 cycles appeared and its health fell
+from 66.0 to 46.0 — the full cycle penalty, for ordinary Kotlin.
+
+That penalty was written for Python and JavaScript, where an import runs at
+module load and a cycle can raise at runtime. Kotlin, Java and Go compile a
+module as a whole; within a package Kotlin needs no import at all.
+
+Every cycle is still reported. Only a cycle touching a `.py`, `.js`, `.jsx`,
+`.mjs`, `.cjs`, `.ts` or `.tsx` file costs points, so a mixed cycle still
+counts. okhttp is back to 66.0; flask keeps its 37 Python cycles and its 39.1.
+
 ## 0.3.0 - 2026-10-30
 
 The first validation sweep: seven real open-source repositories, scanned with

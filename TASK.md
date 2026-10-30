@@ -128,5 +128,6 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R49 — record Go structs and interfaces as classes (0.3.0)
 - [x] R50 — exempt Go Test/Benchmark/Example/Fuzz functions from dead code (0.3.0)
 - [x] R51 — stop scoring 100/100 for a repository nothing could be parsed from (0.3.0)
-- [ ] Kotlin dependency edges: map an absolute package import to a file, or report the gap
+- [x] R52 — Kotlin dependency edges: resolve an absolute package import to a file (0.3.1)
 - [ ] Duplicate detection is noisy at scale (176 groups on okhttp)
+- [x] R53 — stop penalising a dependency cycle in a language where it is idiomatic (0.3.1)
