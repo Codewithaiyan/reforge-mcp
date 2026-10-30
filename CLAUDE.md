@@ -62,6 +62,15 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
 fixes. R1-R36 are closed as of 0.2.6. What remains true:
 
+- **TypeScript and Go only began working in 0.3.0** (R46, R47): their
+  queries had never compiled, so every file of those languages returned a
+  parse error, and one rejected query broke later parses too — a single
+  `.ts` file cost axios all 277 of its files. Treat both as the least
+  proven adapters.
+- **A Kotlin dependency graph is empty and says it is fine.** Kotlin
+  imports are absolute package paths and nothing maps a package to a
+  file, so okhttp reports 0 edges with 0 unresolved relative imports —
+  which by R32's diagnostic reads as "no internal imports" and is false.
 - **Only Python, JavaScript, TypeScript, Go and Kotlin are parsed.** Everything else is
   counted in `summary.unscanned_source_files` and nothing more. A six-file
   result on a Kotlin and C++ repo is a report on six files — check `coverage`
@@ -91,6 +100,12 @@ fixes. R1-R36 are closed as of 0.2.6. What remains true:
 Every defect in IMPROVEMENTS.md after R1 was found by running this tool on code
 outside this repository. The test suite has never found one. Prefer a self-scan
 and a scan of an unrelated real repo over adding another fixture.
+
+The 0.3.0 sweep (flask, requests, express, axios, cobra, okhttp, ripgrep)
+found six defects in an afternoon, two of them whole languages that had
+never worked. Re-run it after any parser change: clone a few repos, scan
+each, and check `parse_failures` and `unresolved_relative_imports` first —
+those two numbers are objective, where a dead-code list needs judgement.
 
 When you fix one of these, tick its box in TASK.md in the same change.
 

@@ -122,3 +122,11 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R43 — report a failed changelog write instead of claiming success (0.2.8)
 - [x] R44 — Kotlin adapter, with the annotation, override and duplicate fixes it needed (0.2.9)
 - [x] R45 — count calls inside f-strings and template literals as references (0.2.9)
+- [x] R46 — TypeScript adapter: impossible class pattern made every .ts file fail (0.3.0)
+- [x] R47 — Go adapter: impossible type pattern made every .go file fail (0.3.0)
+- [x] R48 — extract Go imports from a grouped import declaration (0.3.0)
+- [x] R49 — record Go structs and interfaces as classes (0.3.0)
+- [x] R50 — exempt Go Test/Benchmark/Example/Fuzz functions from dead code (0.3.0)
+- [x] R51 — stop scoring 100/100 for a repository nothing could be parsed from (0.3.0)
+- [ ] Kotlin dependency edges: map an absolute package import to a file, or report the gap
+- [ ] Duplicate detection is noisy at scale (176 groups on okhttp)

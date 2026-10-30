@@ -153,3 +153,68 @@ class TestGenerateChangelogOnBadState:
             assert target.read_text() == "placeholder"
         finally:
             os.chmod(target, stat.S_IWRITE)
+
+
+def test_parse_failures_are_counted_and_not_called_scanned(
+    tmp_path, monkeypatch
+) -> None:
+    """A file whose adapter raises is not a file that was scanned.
+
+    Counting them as scanned let axios report 277 files, no findings and a
+    health score of 100 while every single file had failed to parse.
+    """
+    from reforge_mcp.scanner import parser as parser_module
+    from reforge_mcp.tools.scan import scan_repo
+
+    (tmp_path / "good.py").write_text("def kept():" + chr(10) + "    return 1" + chr(10))
+    (tmp_path / "bad.py").write_text("def broken():" + chr(10) + "    return 2" + chr(10))
+
+    real = parser_module.parse_file
+
+    def fail_on_bad(file_path, repo_root, *a, **k):
+        result = real(file_path, repo_root, *a, **k)
+        if result is not None and result.file.endswith("bad.py"):
+            return parser_module.ParseResult(
+                file=result.file,
+                language=result.language,
+                references=(),
+                functions=(),
+                classes=(),
+                imports=(),
+                total_lines=result.total_lines,
+                error="Parse error: forced by test",
+            )
+        return result
+
+    monkeypatch.setattr(parser_module, "parse_file", fail_on_bad)
+
+    summary = scan_repo(str(tmp_path))["summary"]
+
+    assert summary["parse_failures"] == 1
+    assert summary["total_files"] == 1
+
+
+def test_a_repo_nothing_could_be_read_from_has_no_score(tmp_path) -> None:
+    # ripgrep scored 100.0 with zero files analysed, which is the most
+    # misleading output this tool can produce
+    from reforge_mcp.tools.scan import get_health_score
+
+    (tmp_path / "main.rs").write_text("fn main() {}" + chr(10))
+    (tmp_path / "lib.rs").write_text("pub fn f() -> i32 { 1 }" + chr(10))
+
+    h = get_health_score(str(tmp_path), state_path=None)
+
+    assert h["score"] is None
+    assert h["coverage"] == 0.0
+    assert "no score to report" in h["caveat"]
+
+
+def test_a_fully_readable_repo_reports_zero_failures(tmp_path) -> None:
+    from reforge_mcp.tools.scan import get_health_score, scan_repo
+
+    (tmp_path / "a.py").write_text("def f():" + chr(10) + "    return 1" + chr(10))
+
+    assert scan_repo(str(tmp_path))["summary"]["parse_failures"] == 0
+    h = get_health_score(str(tmp_path), state_path=None)
+    assert isinstance(h["score"], float)
+    assert "caveat" not in h

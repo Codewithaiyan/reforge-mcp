@@ -162,14 +162,27 @@ def is_special_method(name: str) -> bool:
     return name in SPECIAL_METHODS or (name.startswith("__") and name.endswith("__"))
 
 
+# Prefixes a test runner collects by convention, so nothing in the repo ever
+# references them by name. Go's testing package uses capitalised Test,
+# Benchmark, Example and Fuzz; pytest and unittest use test_. Without the
+# Go prefixes, 311 of cobra's 595 functions were reported dead.
+_TEST_NAME_PREFIXES = (
+    "test_",
+    "Test",
+    "Benchmark",
+    "Example",
+    "Fuzz",
+)
+
+
 def is_entry_point_name(name: str) -> bool:
     """
     Check if a function name suggests it's an entry point.
 
-    `test_*` counts: a test runner collects those by naming convention, so
-    nothing in the repo ever references them by name.
+    A test-runner prefix counts: the runner collects those by naming
+    convention, so nothing in the repo ever references them by name.
     """
-    return name in ENTRY_POINT_NAMES or name.startswith("test_")
+    return name in ENTRY_POINT_NAMES or name.startswith(_TEST_NAME_PREFIXES)
 
 
 def _externally_derived_methods(parse_results: list[ParseResult]) -> set[str]:

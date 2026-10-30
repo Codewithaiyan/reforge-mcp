@@ -1224,3 +1224,137 @@ not a reference, which has its own test so the docstring hole stays closed.
 second in R39. Both deleted. R39 recorded a decision to keep `rollback` "as a
 public helper"; that was wrong, since it restores from a `.bak` name nothing
 writes any more. The self-scan now reports zero dead code.
+
+
+## R46 — the TypeScript adapter had never worked
+
+**Reported by:** the first validation sweep, 2026-10-30. Scanning axios gave
+`277 of 277 files failed to parse`, one function found, and a health score of
+**100.0**.
+
+**Root cause:** the class query asked for
+
+```
+(class_declaration name: (identifier) @name body: (class_body) @body)
+```
+
+TypeScript names a class with a `type_identifier`, so this is an *impossible
+pattern* and tree-sitter rejects the entire query at construction. The query was
+built inside `parse()`, so every `.ts` and `.tsx` file ever handed to this tool
+raised `QueryError` and came back as a parse error. TypeScript has been listed
+as a supported language since 0.1.0.
+
+The handling loop had the same assumption — it looked for an `identifier` child
+to take the class name from — so fixing only the query left TypeScript classes
+silently uncounted.
+
+**Worse than one language:** a failed query construction leaves tree-sitter in a
+state where *subsequent* parses fail too. After one `.ts` file, 20 of 20 `.js`
+files failed with `Invalid syntax at row 1, column 0` — a nonsense error for a
+query that had worked moments earlier. That is why axios lost all 277 files and
+not just its TypeScript ones: **a single `.ts` file took the whole repository
+down**. Express, which has no TypeScript, scanned fine throughout.
+
+**Resolution:** the class name node is chosen per language (`type_identifier`
+for TypeScript, `identifier` for JavaScript) and the handler accepts either.
+
+## R47 — the Go adapter had never worked either
+
+**Evidence:** the same sweep, on spf13/cobra: `36 of 36 files failed to parse`,
+0 functions, health **100.0**.
+
+**Root cause:** the same mistake in a different grammar. `(type_spec name:
+(identifier))` is impossible in Go, which also uses `type_identifier`. One
+unusable pattern rejects the whole query, so no `.go` file ever parsed.
+
+**Resolution:** `name: (type_identifier)`. Go went from 0 to 36 files and 595
+functions.
+
+## R48 — Go imports were never extracted
+
+**Evidence:** after R47, cobra parsed but reported `external_imports: 0` for 36
+files that import `fmt` and `os` everywhere.
+
+**Root cause:** the handler iterated the import declaration's *direct* children
+looking for a string. In a grouped import the strings sit two levels deeper,
+under `(import_spec_list (import_spec ...))`, so nothing was found. The query
+already captured the path; the handler ignored the capture and re-walked.
+
+**Resolution:** use the captured `@path` node. 0 to 190 imports on cobra.
+
+## R49 — Go structs and interfaces were never recorded as classes
+
+**Evidence:** after R47, a file declaring `type Config struct { ... }` reported
+no classes.
+
+**Root cause:** the same nesting mistake as R48 — the name lives inside
+`(type_spec)`, not among the declaration's direct children.
+
+**Resolution:** use the captured `@name` node.
+
+## R50 — every Go test function was reported as dead code
+
+**Evidence:** cobra, immediately after R47 made Go parse at all: **311 dead-code
+findings out of 595 functions**, and the entire visible sample was `TestXxx`.
+
+**Root cause:** `is_entry_point_name` exempted `test_*` only. Go's testing
+package collects `Test`, `Benchmark`, `Example` and `Fuzz` by capitalised
+prefix, so nothing in the repository references them by name — exactly the case
+the exemption exists for. This is the third language to need it: Python by
+prefix, Kotlin by `@Test` annotation (R44), Go by capitalised prefix.
+
+**Resolution:** `_TEST_NAME_PREFIXES` covers all four Go prefixes alongside
+`test_`. 311 findings to 26.
+
+## R51 — a repository nothing could be parsed from scored 100 out of 100
+
+**Evidence:** three repositories in one sweep.
+
+```
+axios     277 of 277 files failed to parse  -> health 100.0, coverage 0.975, no caveat
+cobra      36 of 36  files failed to parse  -> health 100.0, coverage 1.000, no caveat
+ripgrep     0 files readable at all         -> health 100.0, coverage 0.000
+```
+
+**Root cause:** `total_files` counted every `ParseResult`, including the ones
+carrying an error, and the error was never surfaced anywhere. Every penalty in
+the health score is a ratio over findings, and a file that failed to parse
+produces no findings — so total failure scored as perfection. This is the
+inverse of R27: not "we did not read it", but "we failed and called it perfect".
+
+**Resolution:**
+
+- `summary.parse_failures` reports how many files the adapters could not read.
+- `summary.total_files` counts only files that actually parsed.
+- `coverage` counts a parse failure against the tool, alongside unreadable
+  extensions.
+- The health `caveat` names parse failures when there are any, and says plainly
+  that they are a defect in this tool rather than in the code.
+- **`score` is `None` when nothing was analysed.** A number would be a lie, and
+  `generate_changelog` already skips non-numeric scores since R42.
+
+## Sweep results — what was already fine
+
+Worth recording, because the sweep was not all bad news. Scanning pallets/flask,
+psf/requests, expressjs/express and square/okhttp found **no defects**: Python,
+JavaScript and Kotlin parsed every file, resolved imports into real dependency
+graphs, and produced plausible findings. okhttp alone is 619 files and 7,261
+functions.
+
+**Known gaps the sweep surfaced but did not fix:**
+
+- **Kotlin dependency edges are all missed.** okhttp reports 0 edges and 6,869
+  external imports, with `unresolved_relative_imports: 0` — which by R32's own
+  diagnostic reads as "this code has no internal imports". That is false:
+  okhttp imports its own packages constantly. Kotlin imports are absolute
+  package paths and nothing maps a package to a file, so the R32 honesty
+  mechanism reports a clean bill where it should report a gap.
+- **Duplicate detection is noisy at scale**: 176 groups on okhttp, 82 on axios,
+  68 on flask. Exact body hashing finds every one-line accessor.
+- **A library's exported API reads as dead code.** 26 of cobra's findings are
+  its public surface, which nothing inside the repository calls. The same
+  applies to requests and flask. Repo-local analysis cannot see a library's
+  callers; the finding means "unused within this repository" and should be read
+  that way.
+- `axios` reports 3 unresolved relative imports, a genuine resolver gap now
+  visible rather than silent.

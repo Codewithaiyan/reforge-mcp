@@ -633,10 +633,15 @@ class JavaScriptAdapter:
             self._language = Language(tree_sitter_typescript.language_typescript())
             self._extensions = {".ts", ".tsx"}
             self._name = "typescript"
+            # TypeScript names a class with a type_identifier. Asking for an
+            # identifier is an impossible pattern, and tree-sitter rejects the
+            # whole query - which is why every .ts file failed to parse.
+            self._class_name = "type_identifier"
         else:
             self._language = Language(tree_sitter_javascript.language())
             self._extensions = {".js", ".jsx", ".mjs", ".cjs"}
             self._name = "javascript"
+            self._class_name = "identifier"
 
         self._parser = Parser(self._language)
 
@@ -687,9 +692,9 @@ class JavaScriptAdapter:
 
         class_query = Query(
             self._language,
-            """
+            f"""
             (class_declaration
-                name: (identifier) @name
+                name: ({self._class_name}) @name
                 body: (class_body) @body
             ) @class
             """,
@@ -762,7 +767,8 @@ class JavaScriptAdapter:
                 body_node = None
 
                 for child in class_node.children:
-                    if child.type == "identifier":
+                    # TypeScript names the class with a type_identifier
+                    if child.type in ("identifier", "type_identifier"):
                         name_node = child
                     elif child.type == "class_body":
                         body_node = child
@@ -1130,7 +1136,7 @@ class GoAdapter:
             """
             (type_declaration
                 (type_spec
-                    name: (identifier) @name
+                    name: (type_identifier) @name
                     type: (_) @type
                 )
             ) @type
@@ -1189,44 +1195,37 @@ class GoAdapter:
                     )
 
         for node, capture_name in _run_captures(type_query, root):
-            if capture_name == "type":
-                type_node = node
-                name_node = None
+            if capture_name == "name":
+                # Take the captured name. It sits inside (type_spec), so
+                # iterating the declaration's direct children never found it:
+                # no Go struct or interface was ever recorded as a class.
+                classes.append(
+                    ClassInfo(
+                        name=node.text.decode("utf-8", "replace"),
+                        file=file_path,
+                        start_line=node.start_point[0] + 1,
+                        end_line=node.end_point[0] + 1,
+                        language="go",
+                    )
+                )
 
-                for child in type_node.children:
-                    if child.type == "identifier":
-                        name_node = child
-
-                if name_node:
-                    name = name_node.text.decode("utf-8")
-                    start_line = name_node.start_point[0] + 1
-                    end_line = type_node.end_point[0] + 1
-
-                    classes.append(
-                        ClassInfo(
-                            name=name,
+        for node, capture_name in _run_captures(import_query, root):
+            if capture_name == "path":
+                # Take the captured string itself. Iterating the declaration's
+                # direct children found nothing for a grouped import, where the
+                # strings sit under (import_spec_list (import_spec ...)) - so no
+                # Go file ever yielded a single import.
+                path = node.text.decode("utf-8", "replace").strip(chr(34) + "`")
+                if path:
+                    imports.append(
+                        ImportInfo(
+                            names=("*",),
+                            from_module=path,
                             file=file_path,
-                            start_line=start_line,
-                            end_line=end_line,
+                            line=node.start_point[0] + 1,
                             language="go",
                         )
                     )
-
-        for node, capture_name in _run_captures(import_query, root):
-            if capture_name in ("import", "import_list"):
-                for child in node.children:
-                    if child.type == "interpreted_string_literal":
-                        # Remove quotes
-                        path = child.text.decode("utf-8")[1:-1]
-                        imports.append(
-                            ImportInfo(
-                                names=("*",),
-                                from_module=path,
-                                file=file_path,
-                                line=node.start_point[0] + 1,
-                                language="go",
-                            )
-                        )
 
         total_lines = source.count(b"\n") + 1
 

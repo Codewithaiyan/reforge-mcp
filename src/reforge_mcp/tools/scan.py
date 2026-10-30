@@ -118,8 +118,13 @@ def scan_repo(
         untracked_skipped = len(parse_results) - len(kept)
         parse_results = kept
 
+    # A file whose adapter raised is not a file that was scanned. Counting
+    # them as scanned let a repository where every single file failed report
+    # 277 files, no findings, and a health score of 100.
+    parse_failures = sum(1 for r in parse_results if r.error)
+
     # Build summary
-    total_files = len(parse_results)
+    total_files = len(parse_results) - parse_failures
     total_functions = sum(len(r.functions) for r in parse_results)
     total_classes = sum(len(r.classes) for r in parse_results)
     total_imports = sum(len(r.imports) for r in parse_results)
@@ -203,6 +208,7 @@ def scan_repo(
             "unscanned_source_files": sum(unscanned.values()),
             "unscanned_by_extension": unscanned,
             "untracked_files_skipped": untracked_skipped,
+            "parse_failures": parse_failures,
             "imported_modules": imported_modules,
         },
         "dead_code": dead_code,
@@ -640,10 +646,13 @@ def get_health_score(
     score = max(0.0, round(score, 1))
 
     # 90/100 from six of 185 files is not a health score for the repository.
-    # Coverage travels with the number so it cannot be read as one.
+    # Coverage travels with the number so it cannot be read as one, and a
+    # file the parser choked on counts against us just like one it cannot read.
     scanned = summary.get("total_files", 0)
     skipped = summary.get("unscanned_source_files", 0)
-    coverage = round(scanned / max(scanned + skipped, 1), 3)
+    failed = summary.get("parse_failures", 0)
+    considered = scanned + skipped + failed
+    coverage = round(scanned / max(considered, 1), 3)
 
     entry: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -674,11 +683,26 @@ def get_health_score(
         },
         "scan_summary": summary,
     }
+    notes = []
     if coverage < 0.5:
-        result["caveat"] = (
-            f"{scanned} of {scanned + skipped} source files were analysed. "
+        notes.append(
+            f"{scanned} of {considered} source files were analysed. "
             f"This score describes those files, not the repository."
         )
+    if failed:
+        notes.append(
+            f"{failed} file(s) could not be parsed at all, so nothing in them "
+            f"was checked. That is a defect in this tool, not in the code."
+        )
+    if scanned == 0:
+        # A perfect score for a repository nothing could be read from is the
+        # most misleading output this tool can produce. There is no score.
+        result["score"] = None
+        notes.append(
+            "No files were analysed, so there is no score to report."
+        )
+    if notes:
+        result["caveat"] = " ".join(notes)
     return result
 
 

@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.3.0 - 2026-10-30
+
+The first validation sweep: seven real open-source repositories, scanned with
+0.2.9. **Two of the five advertised languages had never worked at all.**
+
+### Breaking
+
+`get_health_score` returns `score: None` when no files could be analysed. A
+number there was a lie — see below.
+
+### Fixed - TypeScript had never parsed a single file
+
+The class query asked for `(class_declaration name: (identifier))`. TypeScript
+names a class with a `type_identifier`, which makes that an *impossible
+pattern*, and tree-sitter rejects the whole query. Every `.ts` and `.tsx` file
+handed to this tool since 0.1.0 came back as a parse error.
+
+It was worse than one language: a rejected query leaves tree-sitter unable to
+run later ones, so after a single `.ts` file, JavaScript parsing failed too.
+Scanning axios reported **277 of 277 files failed**, one function, and a health
+score of **100.0**. Express, which has no TypeScript, was fine throughout.
+
+axios now reports 277 files, 896 functions and 374 dependency edges.
+
+### Fixed - Go had never parsed a single file either
+
+The same mistake in another grammar: `(type_spec name: (identifier))`, where Go
+also uses `type_identifier`. Scanning spf13/cobra reported 36 of 36 files
+failed, 0 functions, health **100.0**.
+
+Three further Go defects were hiding behind that one:
+
+- **Imports were never extracted.** The handler walked an import declaration's
+  direct children, but a grouped import nests its strings two levels deeper.
+  0 to 190 imports on cobra.
+- **Structs and interfaces were never recorded as classes**, for the same
+  nesting reason.
+- **Every test function was reported as dead code** — 311 of cobra's 595
+  functions. Go's runner collects `Test`, `Benchmark`, `Example` and `Fuzz` by
+  capitalised prefix; the exemption only knew lowercase `test_`. 311 to 26.
+
+cobra now reports 36 files, 595 functions and health 73.6.
+
+### Fixed - a repository nothing could be read from scored 100 out of 100
+
+`total_files` counted files whose parse had failed, and the failure was never
+surfaced. Every health penalty is a ratio over findings, and a file that fails
+to parse produces no findings — so total failure scored as perfection.
+
+- `summary.parse_failures` reports how many files could not be read.
+- `summary.total_files` counts only files that actually parsed.
+- `coverage` counts a parse failure against the tool.
+- The caveat names parse failures and says they are a defect in this tool.
+- `score` is `None` when nothing was analysed, rather than 100.
+
+### Already working
+
+Flask, requests, express and okhttp produced **no defects** — every file parsed,
+imports resolved into real dependency graphs, findings were plausible. okhttp
+alone is 619 Kotlin files and 7,261 functions.
+
+### Known gaps the sweep surfaced
+
+- **Kotlin dependency edges are all missed.** okhttp shows 0 edges, 6,869
+  external imports and 0 unresolved relative imports — which reads as "no
+  internal imports" and is false. Kotlin imports are absolute package paths and
+  nothing maps a package to a file.
+- Duplicate detection is noisy at scale: 176 groups on okhttp.
+- A library's exported API reads as dead code, since nothing in its own
+  repository calls it. 26 of cobra's 26 findings are its public surface.
+
 ## 0.2.9 - 2026-10-24
 
 ### Added - Kotlin
