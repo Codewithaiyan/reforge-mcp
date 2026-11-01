@@ -136,6 +136,9 @@ SPECIAL_METHODS = {
 # Function names that are typically entry points
 ENTRY_POINT_NAMES = {
     "main",
+    # Go runs every init() at package initialisation, so nothing names it.
+    # gin declares 15 and every one was reported dead.
+    "init",
     "run",
     "start",
     "execute",

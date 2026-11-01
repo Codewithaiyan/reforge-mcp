@@ -36,6 +36,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 
+from ..utils.paths import looks_like_test_path
 from .parser import FunctionInfo, ParseResult
 
 logger = logging.getLogger(__name__)
@@ -161,6 +162,13 @@ def find_duplicates(
 
         first = functions_by_location.get((locations[0].file, locations[0].line))
         line_count = first.end_line - first.start_line + 1 if first else 1
+
+        # Duplication among tests is expected, and at scale it drowns the
+        # findings that matter: of fastapi's 1303 duplicate locations, 1033
+        # were under tests/ and 262 under docs_src/, against 8 in the library.
+        # A helper duplicated between a test and the product still reports.
+        if all(looks_like_test_path(loc.file) for loc in locations):
+            continue
 
         duplicate_groups.append(
             DuplicateGroup(

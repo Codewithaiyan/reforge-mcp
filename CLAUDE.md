@@ -60,7 +60,7 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 
 [IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of every
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
-fixes. R1-R53 are closed as of 0.3.1. What remains true:
+fixes. R1-R59 are closed as of 0.3.2. What remains true:
 
 - **TypeScript and Go only began working in 0.3.0** (R46, R47): their
   queries had never compiled, so every file of those languages returned a
@@ -80,8 +80,15 @@ fixes. R1-R53 are closed as of 0.3.1. What remains true:
   counted in `summary.unscanned_source_files` and nothing more. A six-file
   result on a Kotlin and C++ repo is a report on six files — check `coverage`
   from `get_health_score` before drawing any conclusion about a repository.
-- **Only git-tracked files are analysed** (R30). A file you have created but not
-  `git add`ed is invisible to a scan.
+- **Only git-tracked files are analysed** (R30), and `vendor`, `third_party`
+  and `thirdparty` are ignored even when tracked (R57). A file you have
+  created but not `git add`ed is invisible to a scan.
+- **A Go method is never reported as dead** (R58). Go satisfies interfaces
+  structurally, so a method can be called through an interface declared
+  anywhere; plain functions are still reported.
+- **A duplicate group entirely inside test files is not reported** (R59).
+  Duplication among tests is expected; one shared between a test and the
+  product still reports.
 - **A `<script src=...>` tag is not an import.** Files sharing browser globals
   have no edge between them, and `edges: []` can be the correct answer — check
   `dep_graph.unresolved_relative_imports`, which is the number that means a
@@ -106,11 +113,14 @@ Every defect in IMPROVEMENTS.md after R1 was found by running this tool on code
 outside this repository. The test suite has never found one. Prefer a self-scan
 and a scan of an unrelated real repo over adding another fixture.
 
-The 0.3.0 sweep (flask, requests, express, axios, cobra, okhttp, ripgrep)
-found six defects in an afternoon, two of them whole languages that had
-never worked. Re-run it after any parser change: clone a few repos, scan
-each, and check `parse_failures` and `unresolved_relative_imports` first —
-those two numbers are objective, where a dead-code list needs judgement.
+Two sweeps have run. 0.3.0 took flask, requests, express, axios, cobra,
+okhttp and ripgrep and found six defects, two of them whole languages that
+had never worked. 0.3.2 took vuejs/core, zod, gin, nowinandroid, fastapi,
+django and react and found six more. Re-run it after any parser change:
+clone a few repos, scan each, and read `parse_failures` and
+`unresolved_relative_imports` first — those two are objective, where a
+dead-code list needs judgement. Both sweeps found their worst defect in a
+language the previous sweep had not covered twice.
 
 When you fix one of these, tick its box in TASK.md in the same change.
 

@@ -1,5 +1,85 @@
 # Changelog
 
+## 0.3.2 - 2026-11-01
+
+A second validation sweep over seven more repositories: vuejs/core,
+colinhacks/zod, gin-gonic/gin, android/nowinandroid, tiangolo/fastapi,
+django/django and facebook/react. Six defects, no crashes, no parse failures.
+
+### Fixed - a TypeScript import of its own emitted path never resolved
+
+TypeScript's ESM resolution imports the path it will *emit*, so
+`from "../core/util.js"` is written for a file that is really `util.ts`. zod
+resolved **2 of its 1,290 imports**; vue core, which writes extensionless
+imports, was unaffected, which is why the first sweep missed this.
+
+zod: 2 edges to **523**, unresolved imports 534 to 0.
+
+`.d.ts` declaration files now resolve too, which was 14 more of vue core's.
+
+### Fixed - importing a stylesheet counted as a resolver bug
+
+`unresolved_relative_imports` exists so that one number above zero means this
+tool's resolver is broken. About 35 of vue core's 54 were `./App.vue`,
+`./package.json` and `./dist/...` — imports that could never resolve, because
+no adapter reads those. They now count as external.
+
+### Fixed - vendored code the repository commits was analysed as its own
+
+django reported 487 unresolved imports, every one from a single bundled
+third-party file in its committed admin vendor tree. R30 stopped analysing
+*untracked* vendored code; this is the same complaint in its tracked form.
+
+`vendor`, `third_party` and `thirdparty` join `node_modules` in the default
+ignore list. django: 487 unresolved to **1**.
+
+### Fixed - every Go init() and every Go method was reported as dead
+
+gin produced 35 findings and all were false. Go runs every `init()` at package
+initialisation, and Go satisfies interfaces *structurally* — a method can be
+called through an interface declared anywhere, including the standard library,
+so nothing in the repository names it. That is the Go form of the R26 trade.
+
+gin: **35 findings to 0**. cobra: 26 to 3, and those three are its exported
+public API.
+
+A genuinely dead Go method is no longer reported. Plain functions, where dead Go
+code mostly lives, still are.
+
+### Fixed - duplicate detection was unreadable at scale
+
+1,033 of fastapi's 1,303 duplicate locations were under `tests/` and 262 under
+`docs_src/`, against 8 in the library itself — 108 copies of one tutorial
+function. Duplication among tests is expected, and at that volume it buries
+everything else.
+
+A group whose every member is a test file is no longer reported. One shared
+between a test and the product still is.
+
+```
+fastapi  663 -> 165      django  426 -> 154
+okhttp   176 ->  97      flask    68 ->   5
+```
+
+A minimum body size was tried and rejected: it contradicted a decision already
+documented in the code, that a short module-level duplicate is exactly what this
+tool exists to find.
+
+Kotlin multiplatform keeps tests in `src/jvmTest`, which the old check missed —
+a directory part ending in `Test` now counts, and the capital letter is what
+separates it from one called `latest`.
+
+### Changed
+
+Three copies of "is this a test file" are now one
+`utils.paths.looks_like_test_path`.
+
+### Already working
+
+All seven repositories parsed with zero failures. nowinandroid confirmed the
+Kotlin package resolver on a second repo: 328 files, 643 edges. django is 2,984
+files in 43 seconds.
+
 ## 0.3.1 - 2026-10-30
 
 The two gaps the 0.3.0 sweep found and left open.

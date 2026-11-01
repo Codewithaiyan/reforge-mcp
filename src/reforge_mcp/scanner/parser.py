@@ -1206,6 +1206,15 @@ class GoAdapter:
                             end_line=end_line,
                             body_hash=body_hash,
                             language="go",
+                            # Go satisfies an interface structurally, with no
+                            # declaration of intent, so a method can be called
+                            # through an interface defined anywhere - including
+                            # outside this repo. Marking it exempts it from
+                            # dead-code detection, the same trade R26 makes for
+                            # a class with a base outside the repo.
+                            decorators=("receiver",)
+                            if capture_name == "method"
+                            else (),
                         )
                     )
 

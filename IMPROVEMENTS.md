@@ -1420,3 +1420,137 @@ points. A cycle is penalised if **any** member is `.py`, `.js`, `.jsx`, `.mjs`,
 
 okhttp is back to 66.0 with its 64 cycles reported. Flask keeps its 37 Python
 cycles and its 39.1, which is the right answer for a language where they bite.
+
+
+## R54 — a TypeScript import of its own emitted path never resolved
+
+**Reported by:** the second validation sweep, 2026-11-01. zod: 518 files, 1,290
+imports, **2 edges**, and 534 unresolved relative imports.
+
+**Root cause:** TypeScript's ESM resolution imports the path it will *emit*, so
+`from "../core/util.js"` is written for a file that is really `util.ts`. The
+resolver tried `util.js`, then `util.js.py`, `util.js.ts` and so on, and matched
+nothing. Vue core, which writes extensionless imports, was unaffected — which is
+why 0.3.0's sweep missed this entirely.
+
+**Resolution:** a relative import ending `.js` or `.jsx` also tries `.ts`/`.tsx`.
+zod: **2 edges to 523**, unresolved 534 to 0.
+
+## R55 — an extensionless import never resolved to a declaration file
+
+**Evidence:** 14 of vue core's 54 unresolved imports were `./utils` in a
+package whose file is `utils.d.ts`.
+
+**Resolution:** `.d.ts` and `index.d.ts` are candidates. core: 54 unresolved to
+22, edges 1,228 to 1,247.
+
+## R56 — importing a stylesheet counted as a resolver bug
+
+**Evidence:** of vue core's 54 unresolved relative imports, roughly 35 were
+`./App.vue`, `./package.json`, `./dist/vue.cjs.js` and Vite `?raw` queries.
+
+**Root cause:** `unresolved_relative_imports` exists for exactly one purpose —
+above zero means this tool's resolver is broken (R32). Counting imports that
+could never resolve, because no adapter reads `.vue` or `.json`, made the number
+useless for that.
+
+**Resolution:** a relative import whose extension no adapter can read counts as
+external. An extensionless path still counts, since it could be anything.
+
+## R57 — vendored code the repository commits was analysed as its own
+
+**Evidence:** django reported **487 unresolved relative imports**. Every one came
+from `django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.js`, a bundled
+third-party file containing concatenated core-js sources whose
+`../internals/*` targets exist nowhere.
+
+**Root cause:** R30 stopped analysing *untracked* vendored code. Django commits
+its admin vendor tree, so tracking filtered nothing, and the findings were in
+code the user did not write and cannot change — the original complaint that
+prompted R30, in its tracked form.
+
+**Resolution:** `vendor`, `third_party` and `thirdparty` join the default ignore
+list, beside `node_modules`. django: 487 unresolved to **1**.
+
+A denylist is what R30 replaced, so this is a deliberate narrow exception: these
+are conventional names for "code I did not write", exactly like `node_modules`.
+
+## R58 — every Go init() and every Go method was reported as dead
+
+**Evidence:** gin, after R47 made Go parse at all: **35 findings, all false**.
+15 were `init`, and the remaining 20 were `MarshalJSON`, `UnmarshalJSON`,
+`ProtoReflect`, `Enum` and protobuf `Get*` accessors.
+
+**Root cause:** two distinct gaps.
+
+- Go runs every `init()` at package initialisation, so nothing names it. It was
+  missing from `ENTRY_POINT_NAMES`.
+- Go satisfies an interface **structurally**, with no declaration of intent. A
+  method can be called through an interface declared anywhere, including the
+  standard library, so nothing in the repository ever names it. This is the Go
+  form of R26, and there is no type resolution here to tell a real orphan from
+  an interface implementation.
+
+**Resolution:** `init` is an entry point, and a Go method — a declaration with a
+receiver — is marked and exempted, the same trade R26 makes for a class with a
+base outside the repo. gin: **35 findings to 0**. cobra: 26 to 3, and those
+three are its exported public API, which is the documented repo-local limit.
+
+**Cost:** a genuinely dead Go method is no longer reported. Plain functions,
+where dead Go code mostly lives, still are.
+
+## R59 — duplicate detection was unreadable at scale
+
+**Evidence:** the open task from 0.3.0, now measured properly.
+
+```
+fastapi  663 groups   1033 of 1303 locations under tests/, 262 under docs_src/, 8 in the library
+django   426 groups
+okhttp   176 groups
+flask     68 groups
+```
+
+**Root cause:** duplication among tests is expected — fastapi has 108 copies of
+one tutorial function — and at this volume it buries the findings that matter.
+
+**Resolution:** a group whose every member is a test file is not reported. A
+helper duplicated between a test and the product still is, which is the case
+worth knowing about.
+
+```
+fastapi  663 -> 165      django  426 -> 154
+okhttp   176 ->  97      flask    68 ->   5
+```
+
+**Rejected:** a minimum body size. Four lines read well against these
+repositories, but it contradicted a decision already documented in
+`_is_shared_interface_method` — that a short module-level function duplicated
+across files is exactly what this tool exists to find — and the test holding
+that decision failed. A correct rule did the work instead of a magic number.
+
+**Also fixed:** okhttp barely improved at first, because Kotlin multiplatform
+keeps tests in `src/jvmTest` and `src/commonTest`, and the check matched only a
+directory named exactly `test`. A part ending in `Test` or `Tests` now counts,
+and the capital letter is what separates `jvmTest` from a directory called
+`latest`.
+
+**Consolidation:** three copies of "is this a test file" existed, in `risk.py`,
+`scan.py` and about to be a third here. They are now one
+`utils.paths.looks_like_test_path`, which is the fix this tool would have
+suggested for itself.
+
+## Sweep two — what was already fine
+
+vuejs/core, gin-gonic/gin, android/nowinandroid, tiangolo/fastapi, django/django
+and facebook/react all parsed with **zero parse failures**, and nowinandroid
+confirmed the R52 Kotlin resolver on a second repository: 328 files, 643 edges.
+Scale is acceptable — django is 2,984 files in 43 seconds.
+
+**Known gaps still open:**
+
+- react reports 47 unresolved relative imports, nearly all a bare `..` that
+  resolves through `package.json` `"main"`. Already documented as unread.
+- vue core reports 22, all imports of `dist/` build output absent from a fresh
+  clone. Honest misses.
+- Go imports are still module paths needing `go.mod`; gin resolves 14 edges of
+  521 imports and cobra none, which its single package makes correct.

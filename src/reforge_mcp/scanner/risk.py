@@ -4,29 +4,7 @@ from __future__ import annotations
 
 import os
 
-
-def _looks_like_test(path: str) -> str:
-    """
-    Whether a path is a test file, by the conventions runners use.
-
-    Deliberately strict. A wrong "yes" lowers the risk score and tells the
-    caller a change is safer than it is, so an unconventionally named test -
-    MyCam's webtest/golden_check.js - is missed and the score errs high.
-
-    shortcut: conventional names and directories only, upgrade if a real repo
-    keeps its tests somewhere this does not reach.
-    """
-    norm = path.replace(os.sep, "/").lower()
-    name = norm.rsplit("/", 1)[-1]
-    return (
-        name.startswith("test_")
-        or name.startswith("test.")
-        or "_test." in name
-        or ".test." in name
-        or ".spec." in name
-        or "_spec." in name
-        or any(part in ("test", "tests", "spec", "specs") for part in norm.split("/"))
-    )
+from ..utils.paths import looks_like_test_path
 
 
 def _norm(path: str) -> str:
@@ -92,7 +70,7 @@ def score_risk(
     # while its docstring claimed it checked references to the symbol. A
     # protocol parser was credited with coverage because an unrelated
     # webtest_server.py existed.
-    covered = any(_looks_like_test(path) for path in referring)
+    covered = any(looks_like_test_path(path) for path in referring)
     test_score = 0 if covered else 20
 
     # --- lines_changed (+25 max) --------------------------------------------

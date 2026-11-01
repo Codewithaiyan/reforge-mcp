@@ -26,12 +26,13 @@ import logging
 import os
 import tomllib
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..scanner.dead_code import find_dead_code
 from ..scanner.duplicates import find_duplicates
 from ..scanner.parser import parse_directory, parse_file
+from ..utils.paths import looks_like_test_path
 from ..utils.security import SecurityError, validate_path
 
 logger = logging.getLogger(__name__)
@@ -244,6 +245,13 @@ def _load_ignore_dirs(root: Path) -> set[str]:
     """
     default_ignore = {
         "node_modules",
+        # Conventional names for code the project did not write. R30 excluded
+        # untracked vendored code; django commits its admin JS vendor tree, and
+        # one bundled file there produced 532 unresolved imports and a pile of
+        # findings in third-party code.
+        "vendor",
+        "third_party",
+        "thirdparty",
         ".git",
         "__pycache__",
         ".venv",
@@ -337,12 +345,9 @@ def _is_test_file(file_path: str) -> bool:
     Test suites are held to different norms: thirty small test functions in one
     file is good practice, not a god object.
     """
-    path = Path(file_path)
-    if "tests" in path.parts or "test" in path.parts or "__tests__" in path.parts:
-        return True
-    if path.name.startswith("test_") or path.name.endswith("_test.py"):
-        return True
-    return path.name.endswith(_TEST_FILE_SUFFIXES)
+    return looks_like_test_path(file_path) or Path(file_path).name.endswith(
+        _TEST_FILE_SUFFIXES
+    )
 
 
 def _find_god_files(
@@ -475,9 +480,12 @@ def _build_dependency_graph(
             if target is not None and target != result.file:
                 imported_files.append(target)
             elif target is None:
-                # A relative import must point inside the repo, so failing to
-                # resolve one is a defect here. A bare one is a package.
-                if module.startswith("."):
+                # A relative import of something this tool could parse and did
+                # not find is a defect here, and that is what the count is for.
+                # A relative import of a stylesheet, a Vue component or
+                # package.json never could resolve, and counting those made the
+                # number useless as a signal: 35 of vue core's 54 were assets.
+                if module.startswith(".") and _is_analysable(module):
                     unresolved_relative += 1
                 else:
                     external_imports += 1
@@ -581,6 +589,28 @@ def _count_unscanned_sources(
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
+# A TypeScript import names the emitted JavaScript file; these are the source
+# extensions to look for when that file does not exist.
+# shortcut: no .mts/.cts, which no adapter reads yet
+_TS_SOURCE_FOR_EMITTED = {
+    ".js": (".ts", ".tsx"),
+    ".jsx": (".tsx",),
+}
+
+
+def _is_analysable(module: str) -> bool:
+    """
+    Could this import path ever name a file an adapter reads?
+
+    An extensionless path could be anything, so it counts. A path ending in
+    .vue, .css or .json never resolves however good the resolver is.
+    """
+    suffix = PurePosixPath(module.split("?")[0]).suffix.lower()
+    if not suffix:
+        return True
+    return suffix in _SOURCE_EXTENSIONS or suffix in _TS_SOURCE_FOR_EMITTED
+
+
 def _resolve_package_import(
     module: str, by_fqn: dict[str, str], by_package: dict[str, list[str]]
 ) -> list[str]:
@@ -647,12 +677,21 @@ def _resolve_import_to_file(
 
     # str(base) first: a browser ES module must name its extension
     # ("./protocol.js"), so base is already the whole path.
+    # TypeScript's ESM resolution imports the path it will emit, so
+    # `from "../core/util.js"` is written for a file that is really util.ts.
+    # zod has 534 such imports and resolved 2 of 1290 before this.
+    swap = _TS_SOURCE_FOR_EMITTED.get(base.suffix.lower())
+
     candidates = [str(base)]
+    if swap:
+        candidates += [str(base.with_suffix("")) + ext for ext in swap]
     candidates += [str(base) + ext for ext in _SOURCE_EXTENSIONS]
     candidates += [
+        str(base) + ".d.ts",  # a declaration file is what "./utils" means in a dts test
         str(base / "__init__.py"),
         str(base / "index.js"),
         str(base / "index.ts"),
+        str(base / "index.d.ts"),
     ]
     for candidate in candidates:
         if candidate in known_files:

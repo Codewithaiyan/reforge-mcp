@@ -129,5 +129,12 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R50 — exempt Go Test/Benchmark/Example/Fuzz functions from dead code (0.3.0)
 - [x] R51 — stop scoring 100/100 for a repository nothing could be parsed from (0.3.0)
 - [x] R52 — Kotlin dependency edges: resolve an absolute package import to a file (0.3.1)
-- [ ] Duplicate detection is noisy at scale (176 groups on okhttp)
+- [x] R59 — duplicate detection at scale: a test-only group is not reported (0.3.2)
 - [x] R53 — stop penalising a dependency cycle in a language where it is idiomatic (0.3.1)
+- [x] R54 — resolve a TypeScript import of its own emitted .js path (0.3.2)
+- [x] R55 — resolve an extensionless import to a .d.ts declaration file (0.3.2)
+- [x] R56 — stop counting an asset import as a resolver bug (0.3.2)
+- [x] R57 — ignore vendored directories the repository commits (0.3.2)
+- [x] R58 — exempt Go init() and methods from dead-code detection (0.3.2)
+- [ ] Go imports are module paths; resolving them needs go.mod
+- [ ] `package.json` "main" and tsconfig path mappings are unread
