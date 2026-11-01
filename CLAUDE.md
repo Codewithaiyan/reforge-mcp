@@ -142,7 +142,7 @@ response and a Python graph that had been mostly missing since 0.2.0.
 Re-run it after any parser change:
 clone a few repos, scan each, and read `parse_failures` and
 `unresolved_relative_imports` first — those two are objective, where a
-dead-code list needs judgement. Both sweeps found their worst defect in a
+dead-code list needs judgement. Each sweep found its worst defect in a
 language the previous sweep had not covered twice.
 
 When you fix one of these, tick its box in TASK.md in the same change.
