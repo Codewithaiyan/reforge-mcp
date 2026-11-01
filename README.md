@@ -1,3 +1,4 @@
+[![PyPI](https://img.shields.io/pypi/v/reforge-mcp)](https://pypi.org/project/reforge-mcp/)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
@@ -81,6 +82,10 @@ What is still true, and worth knowing before you trust a number:
 ```bash
 pip install reforge-mcp
 ```
+
+The current release is 0.4.3. The badge above always shows what PyPI is
+actually serving; if `pip` gives you something older it is a cached index,
+and `pip install --no-cache-dir -U reforge-mcp` fixes it.
 
 ### From source
 
