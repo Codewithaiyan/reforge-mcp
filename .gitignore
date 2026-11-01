@@ -72,3 +72,6 @@ reforge-state.json
 reforge-state.json.bak.*
 REFORGE_CHANGES.md
 graphify-out/
+
+# packaged skill zips for marketplace upload
+dist/

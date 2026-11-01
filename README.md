@@ -8,6 +8,8 @@ An MCP server that gives Claude Code structured tools over your codebase — dea
 
 That last part is the point. Every number comes with its own coverage: `coverage` says what fraction of your source was analysed, `parse_failures` says what the parser choked on, `unresolved_relative_imports` says when the dependency graph is incomplete, and `get_health_score` returns `null` rather than a flattering number when it could not read your repository at all.
 
+**Also available as a skill:** listed on Agensi (link to follow) — the skill tells Claude when to reach for these tools and in what order. The skill source is in [`skills/reforge/SKILL.md`](skills/reforge/SKILL.md).
+
 ---
 
 ![CI](https://github.com/Codewithaiyan/reforge-mcp/actions/workflows/ci.yml/badge.svg)
