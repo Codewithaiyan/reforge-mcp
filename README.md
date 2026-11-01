@@ -3,6 +3,12 @@
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
+
+[![Agensi](https://img.shields.io/badge/Agensi-reforge%20skill-2563eb)](https://www.agensi.io/skills/reforge)
+
+> **Also available as an agent skill on [Agensi](https://www.agensi.io/skills/reforge).** The skill teaches your agent the full reforge workflow (scan → score → plan → fix → commit). Install reforge-mcp first, then add the skill.
+
+
 # reforge-mcp
 
 An MCP server that gives Claude Code structured tools over your codebase — dead code, duplicates, god files, the dependency graph — and tells you what it could not read.
