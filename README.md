@@ -83,9 +83,9 @@ What is still true, and worth knowing before you trust a number:
 pip install reforge-mcp
 ```
 
-The current release is 0.4.3. The badge above always shows what PyPI is
-actually serving; if `pip` gives you something older it is a cached index,
-and `pip install --no-cache-dir -U reforge-mcp` fixes it.
+The badge above shows what PyPI is actually serving. If `pip` gives you
+something older it is a cached index, and
+`pip install --no-cache-dir -U reforge-mcp` fixes it.
 
 ### From source
 
