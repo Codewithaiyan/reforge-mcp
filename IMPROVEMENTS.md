@@ -1780,3 +1780,47 @@ recording so the next sweep does not chase them:
   resolved. Resolving it needs the module name from `go.mod` plus a directory
   mapping.
 - **`scan_repo`'s response is unbounded** — see R63.
+
+
+## R68 — the scan report did not fit in the context of the thing that asked for it
+
+**Reported by:** the third sweep measured it, and it was recorded as a task
+rather than fixed at the time. ktor's report was 0.74 MB, nest 0.90 MB and
+django 1.18 MB — roughly 180,000 to 295,000 tokens for a single tool result.
+
+This is the only defect found so far that breaks the *premise* rather than an
+answer. The entire pitch of this server is pointing a model at a repository, and
+above a few hundred files the result consumed the caller's whole context or
+exceeded it. The tool failed on exactly the repositories someone trying it
+would reach for.
+
+**What made it safe to fix:** `get_health_score`, `score_risk` and
+`infer_architecture` all call `scan_repo` *internally*. Nothing passes a report
+across the MCP boundary and back, so the contract CLAUDE.md warns about —
+"changing a key means changing all three" — only has to hold for the in-process
+return value. Capping the *wire* form leaves it untouched.
+
+**Resolution:** `cap_report` in `tools/scan.py`, called by the MCP wrapper,
+which stays one line. Lists cap at 200, duplicate groups at 50, and a group's
+locations at 10 — one ktor group held **913 locations**, 189 KB of what was by
+then a 289 KB response, and nobody reads the 913th copy of a body.
+
+Every count stays exact: a capped list gains `<key>_total`, and `truncated`
+maps each shortened key to its real length, so a short list is never mistaken
+for a complete one. `summary` is never trimmed, since it is the most useful part
+and the cheapest. `references_by_file` and `lines_by_file` are dropped — they
+exist for `score_risk` and are enormous.
+
+```
+ktor    0.74 MB ->  139 KB  (~35k tokens)    nest     0.90 MB -> 115 KB
+django  1.18 MB ->  168 KB  (~42k tokens)    okhttp   0.45 MB -> 112 KB
+self      8.5 KB unchanged, nothing capped
+```
+
+Health scores are identical before and after on all four, which has its own
+test, and `cap_report` does not modify the report it is given.
+
+**Found while fixing it:** `scan_repo` accepted a `max_depth` parameter,
+documented as preventing infinite loops in symlinked repositories, that was
+never passed to `parse_directory` and had no effect on anything. Removed from
+the MCP tool signature rather than left as a parameter that does nothing.

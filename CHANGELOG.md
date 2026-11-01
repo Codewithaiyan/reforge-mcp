@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.4.1 - 2026-11-01
+
+### Fixed - the scan report did not fit in the context of the thing that asked for it
+
+ktor's report was 0.74 MB, nest 0.90 MB and django 1.18 MB — roughly 180,000 to
+295,000 tokens for one tool result. The whole point of this server is pointing a
+model at a repository, and above a few hundred files the answer consumed the
+caller's entire context. It failed on exactly the repositories someone would
+try it on first.
+
+`get_health_score`, `score_risk` and `infer_architecture` all call `scan_repo`
+in-process, so nothing passes a report across the MCP boundary and back. Capping
+the wire form leaves the contract those three read untouched.
+
+Lists cap at 200, duplicate groups at 50, and a group's locations at 10 — one
+ktor group held 913 locations, 189 KB of the response on its own.
+
+Every count stays exact. A capped list gains `<key>_total`, and `truncated`
+maps each shortened key to its real length, so a short list is never mistaken
+for a complete one. `summary` is never trimmed.
+
+```
+ktor    0.74 MB ->  139 KB      nest     0.90 MB -> 115 KB
+django  1.18 MB ->  168 KB      okhttp   0.45 MB -> 112 KB
+```
+
+Health scores are unchanged on all four.
+
+### Removed
+
+`scan_repo`'s `max_depth` parameter, which was documented as preventing
+infinite loops in symlinked repositories and was never passed to the directory
+walker. It had no effect on anything.
+
 ## 0.4.0 - 2026-11-01
 
 A third validation sweep over seven more repositories: prometheus, caddy, ktor,

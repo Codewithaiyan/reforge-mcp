@@ -147,6 +147,4 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R65 — collect TypeScript decorators, which are preceding siblings (0.4.0)
 - [x] R66 — record a TypeScript class's extends and implements clauses (0.4.0)
 - [x] R67 — resolve an absolute import of this repo's own package (0.4.0)
-- [ ] scan_repo's response is unbounded: ktor is 0.74 MB and nest 0.90 MB,
-      roughly 180-220k tokens. Capping the lists while keeping counts exact
-      changes a contract get_health_score, score_risk and infer_architecture read
+- [x] R68 — cap the scan report that crosses the MCP boundary (0.4.1)

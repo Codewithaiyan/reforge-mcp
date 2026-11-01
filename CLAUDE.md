@@ -67,7 +67,7 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 
 [IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of every
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
-fixes. R1-R67 are closed as of 0.4.0. What remains true:
+fixes. R1-R68 are closed as of 0.4.1. What remains true:
 
 - **TypeScript and Go only began working in 0.3.0** (R46, R47): their
   queries had never compiled, so every file of those languages returned a
@@ -84,9 +84,10 @@ fixes. R1-R67 are closed as of 0.4.0. What remains true:
   invisible, because those imports counted as external.
 - **A Go dependency graph is about 1% resolved**: Go imports are module
   paths needing `go.mod`. caddy resolves 31 edges of 3,321 imports.
-- **`scan_repo`'s response is unbounded** — 0.74 MB for ktor, 0.90 MB for
-  nest, roughly 180-220k tokens. Open task; do not assume a caller can
-  receive a whole scan of a large repository.
+- **The MCP wire form of a scan is capped** (R68): lists at 200, duplicate
+  groups at 50, a group's locations at 10. `scan_repo()` itself still
+  returns everything, because the three report tools read it in process —
+  cap only in `cap_report`, never in `scan_repo`, or their ratios break.
 - **A Kotlin import resolves through its package, not its path** (R52).
   Each file's declared package is indexed with the fully-qualified name
   of everything it declares; the index is consulted only for files that
