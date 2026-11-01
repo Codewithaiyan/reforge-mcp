@@ -136,8 +136,17 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R56 — stop counting an asset import as a resolver bug (0.3.2)
 - [x] R57 — ignore vendored directories the repository commits (0.3.2)
 - [x] R58 — exempt Go init() and methods from dead-code detection (0.3.2)
-- [ ] Go imports are module paths; resolving them needs go.mod
+- [ ] Go imports are module paths; resolving them needs go.mod — caddy resolves
+      31 edges of 3321 imports, prometheus 631 of 8224 (R63 sweep)
 - [ ] `package.json` "main" and tsconfig path mappings are unread
 - [x] R60 — match the test-command allowlist on parsed tokens, not a string prefix (0.3.3)
 - [x] R61 — keep the backup when git cannot recover the patched file (0.3.3)
 - [x] R62 — bound every runtime dependency (0.3.3)
+- [x] R63 — count a package-wide import instead of expanding it into an edge per file (0.4.0)
+- [x] R64 — scan .mts and .cts files (0.4.0)
+- [x] R65 — collect TypeScript decorators, which are preceding siblings (0.4.0)
+- [x] R66 — record a TypeScript class's extends and implements clauses (0.4.0)
+- [x] R67 — resolve an absolute import of this repo's own package (0.4.0)
+- [ ] scan_repo's response is unbounded: ktor is 0.74 MB and nest 0.90 MB,
+      roughly 180-220k tokens. Capping the lists while keeping counts exact
+      changes a contract get_health_score, score_risk and infer_architecture read

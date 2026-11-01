@@ -52,7 +52,17 @@ def test_a_kotlin_package_import_becomes_an_edge(tmp_path: Path) -> None:
     assert ("Client.kt", "Platform.kt") in _edge_names(_graph(tmp_path))
 
 
-def test_a_star_import_depends_on_every_file_in_the_package(tmp_path: Path) -> None:
+def test_a_star_import_over_many_files_is_counted_not_expanded(
+    tmp_path: Path,
+) -> None:
+    """
+    One edge per file in the package is literally true and useless.
+
+    ktor is Kotlin multiplatform, where common, jvm, js and native all
+    declare the same package, so 6384 package-wide imports became 147097
+    edges and a 39 MB scan_repo response - about 10 million tokens, which no
+    caller can receive. They are counted instead.
+    """
     _write(tmp_path / "src" / "util" / "One.kt", "package app.util\n\nfun one(): Int = 1\n")
     _write(tmp_path / "src" / "util" / "Two.kt", "package app.util\n\nfun two(): Int = 2\n")
     _write(
@@ -61,10 +71,27 @@ def test_a_star_import_depends_on_every_file_in_the_package(tmp_path: Path) -> N
     )
     _init_repo(tmp_path)
 
-    edges = _edge_names(_graph(tmp_path))
+    graph = _graph(tmp_path)
 
-    assert ("Main.kt", "One.kt") in edges
-    assert ("Main.kt", "Two.kt") in edges
+    assert graph["package_imports"] == 1
+    assert ("Main.kt", "One.kt") not in _edge_names(graph)
+    assert graph["external_imports"] == 0
+    assert graph["unresolved_relative_imports"] == 0
+
+
+def test_a_package_holding_one_file_still_gives_an_edge(tmp_path: Path) -> None:
+    # unambiguous and cheap: there is nothing to fan out to
+    _write(
+        tmp_path / "src" / "only" / "Solo.kt",
+        "package app.only\n\nfun solo(): Int = 1\n",
+    )
+    _write(
+        tmp_path / "src" / "Main.kt",
+        "package app\n\nimport app.only.*\n\nfun main() { println(solo()) }\n",
+    )
+    _init_repo(tmp_path)
+
+    assert ("Main.kt", "Solo.kt") in _edge_names(_graph(tmp_path))
 
 
 def test_importing_a_member_resolves_to_its_declaring_file(tmp_path: Path) -> None:

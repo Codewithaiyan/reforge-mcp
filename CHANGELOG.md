@@ -1,5 +1,86 @@
 # Changelog
 
+## 0.4.0 - 2026-11-01
+
+A third validation sweep over seven more repositories: prometheus, caddy, ktor,
+pydantic, nest, scrapy and svelte. Five defects, two of them large.
+
+### Breaking
+
+`dep_graph` gains `package_imports`, and an import naming a whole package in
+this repository is counted there instead of becoming one edge per file in that
+package. A package holding a single file still yields an edge.
+
+### Fixed - scan_repo returned 39 MB for one repository
+
+ktor produced **147,644 edges from 2,533 files**, a 39.47 MB response — roughly
+9.9 million tokens, which no caller can receive.
+
+Kotlin multiplatform declares the same package in its common, jvm, js and
+native source sets, so `io.ktor.util` is declared by 82 files and one star
+import became 82 edges. 6,384 package-wide imports produced 147,097 of the
+edges; the 696 imports naming a specific declaration produced 696.
+
+The expansion earned almost nothing elsewhere — okhttp has one such import of
+2,101, nowinandroid and MyCam none — so it is counted rather than expanded.
+
+```
+ktor   147,644 edges -> 639    39.47 MB -> 0.74 MB    4,206 cycles -> 3
+okhttp   1,632 edges -> 1,607
+```
+
+### Fixed - Python's dependency graph was missing in any package-based project
+
+scrapy reported **29 edges from 540 files**. Its internal imports are absolute —
+`from scrapy.utils.misc import helper`, written from inside `scrapy/` — and
+nothing resolved an absolute import of the repository's own package against the
+repository root.
+
+It was invisible too: those imports counted as external, so
+`unresolved_relative_imports` stayed 0 and the honesty signal read clean while
+the graph was mostly absent. Every Python repository scanned since 0.2.0 was
+affected.
+
+```
+scrapy      29 edges -> 2,396      django  1,090 -> 8,699
+flask      101 edges ->   119      self-scan  24 ->    64
+```
+
+A `src/` layout resolves too, and from outside a package: `tests/` has no
+`__init__.py` but `from mypkg.util import x` there still means
+`src/mypkg/util.py`. A third-party import that shares a name with a local
+module still does not resolve to it.
+
+### Fixed - a decorated TypeScript method was reported dead
+
+nest produced **422 dead-code findings** and a health score of 22.2. TypeScript
+attaches a decorator as the *preceding sibling* of a declaration, not a child,
+so a NestJS `@SubscribeMessage` handler looked like a plain method. Python and
+Kotlin both collect their decorators; TypeScript was the one language where the
+existing exemption could not fire.
+
+A class's `extends` and `implements` were not recorded either, so a method
+reached through an interface declared outside the repository — `parseValue` on a
+GraphQL scalar — could not be exempted.
+
+nest: **422 findings to 32**, the rest object-literal methods passed to Rollup
+and Apollo.
+
+### Fixed - .mts and .cts files were invisible
+
+nest has 79. They were in neither the scanned nor the unreadable list, so
+`coverage` read 0.995 while they were absent from the accounting entirely.
+
+### Known gaps, now quantified
+
+- **A Go dependency graph is roughly 1 per cent resolved.** Go imports are
+  module paths: caddy resolves 31 edges from 3,321 imports, prometheus 631 from
+  8,224. It needs the module name from `go.mod`.
+- **`scan_repo`'s response is unbounded.** 0.74 MB for ktor and 0.90 MB for
+  nest is still 180-220k tokens. The remaining bulk is legitimate, so capping it
+  means truncating lists while keeping counts exact — a contract change across
+  three consumers, recorded rather than rushed.
+
 ## 0.3.3 - 2026-11-01
 
 A risk audit, run after both validation sweeps closed. One security hole, one

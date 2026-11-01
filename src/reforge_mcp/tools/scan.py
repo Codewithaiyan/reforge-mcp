@@ -448,6 +448,7 @@ def _build_dependency_graph(
     file_imports: dict[str, list[str]] = {}
     external_imports = 0
     unresolved_relative = 0
+    package_imports = 0
 
     for result in parse_results:
         if result.error:
@@ -468,10 +469,17 @@ def _build_dependency_graph(
                 package_targets = _resolve_package_import(
                     module, by_fqn, by_package
                 )
+                if len(package_targets) == 1:
+                    if package_targets[0] != result.file:
+                        imported_files.append(package_targets[0])
+                    continue
                 if package_targets:
-                    imported_files.extend(
-                        t for t in package_targets if t != result.file
-                    )
+                    # An import of a whole package depends on all of it, but
+                    # one edge per file is literally true and useless: ktor is
+                    # Kotlin multiplatform, where common, jvm, js and native
+                    # all declare the same package, so 6384 such imports became
+                    # 147097 edges and a 39 MB response. Counted, not expanded.
+                    package_imports += 1
                     continue
 
             target = _resolve_import_to_file(
@@ -510,13 +518,19 @@ def _build_dependency_graph(
         "circular": circular,
         # Imports with no edge read as a broken resolver. These say which:
         # imports that leave the repo, versus relative ones that should have
-        # resolved and did not.
+        # resolved and did not, versus ones that name a whole package in this
+        # repo and are deliberately not expanded into an edge per file.
         "external_imports": external_imports,
         "unresolved_relative_imports": unresolved_relative,
+        "package_imports": package_imports,
     }
 
 
-_SOURCE_EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".kt", ".kts")
+_SOURCE_EXTENSIONS = (
+    ".py", ".js", ".jsx", ".mjs", ".cjs",
+    ".ts", ".tsx", ".mts", ".cts",
+    ".go", ".kt", ".kts",
+)
 
 # Source files no adapter can read. Counted and reported so a partial scan is
 # never mistaken for a verdict on the whole repository: a seven-file result on a
@@ -591,10 +605,11 @@ def _count_unscanned_sources(
 
 # A TypeScript import names the emitted JavaScript file; these are the source
 # extensions to look for when that file does not exist.
-# shortcut: no .mts/.cts, which no adapter reads yet
 _TS_SOURCE_FOR_EMITTED = {
     ".js": (".ts", ".tsx"),
     ".jsx": (".tsx",),
+    ".mjs": (".mts",),
+    ".cjs": (".cts",),
 }
 
 
@@ -609,6 +624,27 @@ def _is_analysable(module: str) -> bool:
     if not suffix:
         return True
     return suffix in _SOURCE_EXTENSIONS or suffix in _TS_SOURCE_FOR_EMITTED
+
+
+# Where an absolute import can be rooted: the repository itself, or a src
+# layout. shortcut: no setuptools package_dir or a custom source root.
+_PACKAGE_ROOTS = (None, "src")
+
+
+def _resolve_absolute_module(module: str, known_files: set[str]) -> str | None:
+    """
+    Resolve a dotted import against the repository root rather than the
+    importing file's directory, which is what an absolute import means.
+    """
+    parts = [p for p in module.split(".") if p]
+    if not parts:
+        return None
+    for root in _PACKAGE_ROOTS:
+        base = Path(*parts) if root is None else Path(root, *parts)
+        for candidate in (str(base) + ".py", str(base / "__init__.py")):
+            if candidate in known_files:
+                return candidate
+    return None
 
 
 def _resolve_package_import(
@@ -670,9 +706,12 @@ def _resolve_import_to_file(
         if language in ("javascript", "typescript"):
             return None
         # Inside a package, a bare import is absolute: "from git import Repo"
-        # is the installed GitPython, not the tools/git.py next door.
+        # is the installed GitPython, not the tools/git.py next door. It can
+        # still be this repository's own package, though - scrapy imports
+        # scrapy.utils.misc from inside scrapy/, which resolved to nothing and
+        # left it 29 edges for 540 files.
         if str(current_dir / "__init__.py") in known_files:
-            return None
+            return _resolve_absolute_module(import_path, known_files)
         base = current_dir.joinpath(*import_path.split("."))
 
     # str(base) first: a browser ES module must name its extension
@@ -697,6 +736,10 @@ def _resolve_import_to_file(
         if candidate in known_files:
             return candidate
 
+    # A dotted import can be absolute from outside a package too: tests/ has no
+    # __init__.py, and `from mypkg.util import x` there means src/mypkg/util.py.
+    if not import_path.startswith("."):
+        return _resolve_absolute_module(import_path, known_files)
     return None
 
 

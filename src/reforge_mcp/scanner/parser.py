@@ -634,7 +634,9 @@ class JavaScriptAdapter:
 
         if typescript:
             self._language = Language(tree_sitter_typescript.language_typescript())
-            self._extensions = {".ts", ".tsx"}
+            # .mts and .cts are TypeScript too; nest has 79 of them and they
+            # were neither scanned nor counted as unreadable.
+            self._extensions = {".ts", ".tsx", ".mts", ".cts"}
             self._name = "typescript"
             # TypeScript names a class with a type_identifier. Asking for an
             # identifier is an impossible pattern, and tree-sitter rejects the
@@ -650,6 +652,71 @@ class JavaScriptAdapter:
 
     def get_language(self) -> Language:
         return self._language
+
+    def _preceding_decorators(self, node: "Node") -> tuple[str, ...]:
+        """
+        Decorator names written immediately above a declaration.
+
+        TypeScript attaches a decorator as a preceding *sibling*, not a
+        child, so a NestJS `@SubscribeMessage` handler looked like a plain
+        method and was reported dead: nest produced 422 findings, most of
+        them decorated handlers nothing in the repo names.
+        """
+        parent = node.parent
+        if parent is None:
+            return ()
+        index = next(
+            (k for k, c in enumerate(parent.children) if c.id == node.id), None
+        )
+        if index is None:
+            return ()
+
+        names: list[str] = []
+        for child in reversed(parent.children[:index]):
+            if child.type == "decorator":
+                text = child.text.decode("utf-8", "replace").lstrip("@")
+                names.append(text.split("(")[0].strip())
+            elif child.type in (
+                "comment",
+                "export",
+                "default",
+                "declare",
+                "abstract",
+                "{",
+            ):
+                continue
+            else:
+                break  # a decorator further up belongs to another member
+        return tuple(reversed(names))
+
+    def _heritage_names(self, class_node: "Node") -> tuple[str, ...]:
+        """
+        What a class extends or implements, by the last dotted part.
+
+        A TypeScript class implementing an interface declared outside the
+        repository is the R26 case: the method is called through the
+        interface, so nothing here names it. `parseValue` on a GraphQL
+        scalar is one.
+        """
+        names: list[str] = []
+        for child in class_node.children:
+            if child.type != "class_heritage":
+                continue
+            for clause in child.children:
+                if clause.type in ("extends", "implements", ","):
+                    continue
+                # the clause wraps the keyword and the type; its own text would
+                # read "implements CustomScalar", so only children are read
+                parts = clause.children or (clause,)
+                for part in parts:
+                    if part.type in ("extends", "implements", ",", "<", ">"):
+                        continue
+                    text = part.text.decode("utf-8", "replace").strip()
+                    text = text.split("<")[0].split("(")[0].strip()
+                    if text:
+                        names.append(text.split(".")[-1])
+                        break
+        return tuple(dict.fromkeys(names))
 
     def get_file_extensions(self) -> set[str]:
         return self._extensions
@@ -760,6 +827,7 @@ class JavaScriptAdapter:
                             end_line=end_line,
                             body_hash=body_hash,
                             language=self._name,
+                            decorators=self._preceding_decorators(func_node),
                         )
                     )
 
@@ -802,7 +870,9 @@ class JavaScriptAdapter:
                             end_line=end_line,
                             methods=tuple(methods),
                             language=self._name,
-                            bases=_base_class_names(class_node),
+                            # _base_class_names reads a Python argument_list;
+                            # TypeScript puts extends/implements in class_heritage
+                            bases=self._heritage_names(class_node),
                         )
                     )
 

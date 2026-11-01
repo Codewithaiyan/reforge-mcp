@@ -1638,3 +1638,145 @@ adapters load.
 
 This does not make a grammar change harmless — it makes it a resolution error
 at install time instead of silent parse failures at scan time.
+
+
+## R63 — scan_repo returned 39 MB for one repository
+
+**Reported by:** the third validation sweep, 2026-11-01. ktor produced
+**147,644 edges from 2,533 files** and a scan_repo response of **39.47 MB,
+about 9.9 million tokens** — a payload no caller can receive.
+
+**Root cause:** R52 expanded an import of a whole package into one edge per
+file in that package. ktor is Kotlin *multiplatform*, where common, jvm, js and
+native source sets all declare the same package, so `io.ktor.util` is declared
+by 82 files and one star import became 82 edges. 6,384 package-wide imports
+produced 147,097 edges; the 696 imports naming a specific declaration produced
+696.
+
+Measured against the other Kotlin repositories, the expansion earns almost
+nothing: okhttp has 1 package-wide import of 2,101, nowinandroid none, MyCam
+none.
+
+**Resolution:** a package-wide import is counted in
+`dep_graph.package_imports` rather than expanded. A package holding exactly one
+file still yields an edge, since there is nothing to fan out to.
+
+```
+ktor      147,644 edges -> 639      39.47 MB -> 0.74 MB     4,206 cycles -> 3
+okhttp      1,632 edges -> 1,607    unchanged in substance
+```
+
+**Still open:** 0.74 MB is roughly 180,000 tokens, and nest is 0.90 MB. The
+remaining bulk is legitimate — every node path and every real edge — so capping
+it means truncating lists while keeping counts exact, which changes a contract
+`get_health_score`, `score_risk` and `infer_architecture` all read. Recorded as
+a task rather than rushed.
+
+## R64 — .mts and .cts files were invisible
+
+**Evidence:** nest has 79 `.mts` files. They were not in `_SOURCE_EXTENSIONS`,
+so nothing parsed them, and not in `_UNSUPPORTED_SOURCE_EXTENSIONS`, so nothing
+counted them either. `coverage` read 0.995 while 79 files were simply absent
+from the accounting.
+
+**Resolution:** the TypeScript adapter claims `.mts` and `.cts`, both join
+`_SOURCE_EXTENSIONS`, and `.mjs`/`.cjs` map to them in the emitted-path table
+from R54 — the shortcut comment that said "no .mts/.cts, which no adapter reads
+yet" is now untrue and gone. nest: 2,201 files to 2,280.
+
+## R65 — a decorated TypeScript method was reported dead
+
+**Evidence:** nest produced **422 dead-code findings**, with a health score of
+22.2. The sample was `onPush`, `sendNotification`, `postTest` — NestJS handlers
+declared like this:
+
+```ts
+@SubscribeMessage('push')
+onPush(@MessageBody() data) { ... }
+```
+
+**Root cause:** TypeScript attaches a decorator as the **preceding sibling** of
+the declaration, not a child, so the JS/TS adapter never saw one and every
+`FunctionInfo` carried `decorators=()`. Python and Kotlin both collect theirs;
+TypeScript was the one language where the existing exemption could not fire.
+
+**Resolution:** `_preceding_decorators` walks back from the declaration,
+collecting a consecutive run of `decorator` siblings and stopping at the first
+real statement, so a decorator belonging to an earlier member is not
+misattributed.
+
+## R66 — a TypeScript class's extends and implements were never recorded
+
+**Evidence:** found alongside R65. `parseValue` and `parseLiteral` on a GraphQL
+scalar were reported dead. The class is
+`@Scalar('Date') class DateScalar implements CustomScalar<number, Date>`, so
+those methods are reached through an interface declared outside the repository —
+the R26 case exactly — but `ClassInfo.bases` was empty.
+
+**Root cause:** the class handler called `_base_class_names`, which reads a
+Python `argument_list`. TypeScript puts supertypes in `class_heritage`, under an
+`extends_clause` or `implements_clause`.
+
+**Resolution:** `_heritage_names` reads the clause's children — reading the
+clause itself yielded `"implements CustomScalar"`, keyword included, which was
+my first attempt and wrong.
+
+nest: **422 findings to 32**, and the remainder are object-literal methods
+passed to Rollup and Apollo, which no repo-local analysis can resolve.
+
+## R67 — Python's dependency graph was missing in any package-based project
+
+**Evidence:** scrapy reported **29 edges from 540 files** with 5,047 imports.
+Spot-checking showed its internal imports are absolute — `from scrapy.utils.misc
+import helper`, written from inside `scrapy/`.
+
+**Root cause:** R31 established that inside a package a bare import is absolute,
+so it must not resolve to a sibling, and returned None. Correct as far as it
+went, and nothing then tried the obvious next thing: an absolute import of *this
+repository's own package* resolves from the repository root.
+
+Worse, it was invisible. Those imports were counted in `external_imports`, so
+`unresolved_relative_imports` stayed at 0 and the honesty signal read clean
+while the graph was mostly missing. Every Python repository scanned since 0.2.0
+was affected.
+
+**Resolution:** `_resolve_absolute_module` resolves a dotted import against the
+repository root and against a `src/` layout, tried both inside a package and as
+a fallback outside one — `tests/` has no `__init__.py` but
+`from mypkg.util import x` there still means `src/mypkg/util.py`.
+
+```
+scrapy      29 edges -> 2,396
+django   1,090 edges -> 8,699
+flask      101 edges ->   119
+self-scan   24 edges ->    64    (the test files import reforge_mcp absolutely)
+```
+
+R31 is preserved: `from git import Repo` inside a package still does not
+resolve to the `git.py` beside it, because no `git.py` or `src/git.py` exists at
+the root. There is a test for it.
+
+## Sweep three — what was already fine, and two false alarms
+
+prometheus, caddy, ktor, pydantic, nest, scrapy and svelte all parsed with
+**zero parse failures**, and no tool crashed.
+
+Two anomalies turned out to be my own clones, not defects, and are worth
+recording so the next sweep does not chase them:
+
+- **ktor appeared to lose 1,950 files.** `git ls-files` reported 2,435 `.kt`
+  files and only 419 were on disk: the clone had been interrupted, and
+  rebuilding the index with `read-tree` made git claim files the working tree
+  never received. The scan had read 419 of 419 present, and `coverage 0.969` was
+  honest. Restoring it needed `core.longpaths`, because the scratchpad prefix
+  plus ktor's package directories exceeds Windows' 260-character limit.
+- **pydantic reported 20 unresolved relative imports**, all of files with
+  extremely long names, missing from the working tree for the same reason.
+
+**Known gaps, both now quantified:**
+
+- **Go imports are module paths.** caddy resolves 31 edges from 3,321 imports
+  and prometheus 631 from 8,224, so a Go dependency graph is roughly 1 per cent
+  resolved. Resolving it needs the module name from `go.mod` plus a directory
+  mapping.
+- **`scan_repo`'s response is unbounded** — see R63.

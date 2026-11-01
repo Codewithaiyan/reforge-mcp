@@ -67,13 +67,26 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 
 [IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of every
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
-fixes. R1-R62 are closed as of 0.3.3. What remains true:
+fixes. R1-R67 are closed as of 0.4.0. What remains true:
 
 - **TypeScript and Go only began working in 0.3.0** (R46, R47): their
   queries had never compiled, so every file of those languages returned a
   parse error, and one rejected query broke later parses too — a single
   `.ts` file cost axios all 277 of its files. Treat both as the least
   proven adapters.
+- **An import of a whole package is counted, not expanded** (R63). One edge
+  per file in the package gave ktor 147,644 edges and a 39 MB response;
+  `dep_graph.package_imports` holds the count. A single-file package still
+  yields an edge.
+- **An absolute Python import resolves from the repo root or `src/`** (R67),
+  not only relative to the importing file. Before this, scrapy had 29 edges
+  for 540 files and django's graph was eight times too sparse — and it was
+  invisible, because those imports counted as external.
+- **A Go dependency graph is about 1% resolved**: Go imports are module
+  paths needing `go.mod`. caddy resolves 31 edges of 3,321 imports.
+- **`scan_repo`'s response is unbounded** — 0.74 MB for ktor, 0.90 MB for
+  nest, roughly 180-220k tokens. Open task; do not assume a caller can
+  receive a whole scan of a large repository.
 - **A Kotlin import resolves through its package, not its path** (R52).
   Each file's declared package is indexed with the fully-qualified name
   of everything it declares; the index is consulted only for files that
@@ -120,10 +133,13 @@ Every defect in IMPROVEMENTS.md after R1 was found by running this tool on code
 outside this repository. The test suite has never found one. Prefer a self-scan
 and a scan of an unrelated real repo over adding another fixture.
 
-Two sweeps have run. 0.3.0 took flask, requests, express, axios, cobra,
+Three sweeps have run. 0.3.0 took flask, requests, express, axios, cobra,
 okhttp and ripgrep and found six defects, two of them whole languages that
 had never worked. 0.3.2 took vuejs/core, zod, gin, nowinandroid, fastapi,
-django and react and found six more. Re-run it after any parser change:
+django and react and found six more. 0.4.0 took prometheus, caddy, ktor,
+pydantic, nest, scrapy and svelte and found five, including a 39 MB
+response and a Python graph that had been mostly missing since 0.2.0.
+Re-run it after any parser change:
 clone a few repos, scan each, and read `parse_failures` and
 `unresolved_relative_imports` first — those two are objective, where a
 dead-code list needs judgement. Both sweeps found their worst defect in a
