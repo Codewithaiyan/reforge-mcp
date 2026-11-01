@@ -4,7 +4,9 @@
 
 # reforge-mcp
 
-An MCP server that connects Claude Code to your codebase and systematically cleans it up — scanning, planning, and applying fixes one reversible file at a time.
+An MCP server that gives Claude Code structured tools over your codebase — dead code, duplicates, god files, the dependency graph — and tells you what it could not read.
+
+That last part is the point. Every number comes with its own coverage: `coverage` says what fraction of your source was analysed, `parse_failures` says what the parser choked on, `unresolved_relative_imports` says when the dependency graph is incomplete, and `get_health_score` returns `null` rather than a flattering number when it could not read your repository at all.
 
 ---
 
@@ -18,7 +20,7 @@ Vibe-coded repos accumulate fast: functions nobody calls, copy-pasted logic in t
 
 | Tool | What it does |
 |---|---|
-| `scan_repo` | AST-parses your repo (Python, JS, TS, Go) and returns dead code, duplicates, god files, the dependency graph with any cycles, and monorepo subprojects |
+| `scan_repo` | AST-parses your repo (Python, JS, TS, Go, Kotlin) and returns dead code, duplicates, god files, the dependency graph with any cycles, and monorepo subprojects |
 | `get_chunk` | Reads an exact line-range slice from any file — lets Claude fetch only what it needs without blowing its context window |
 | `write_fix` | Applies a unified diff, runs an optional test command, and rolls the file back if either the diff or the tests fail |
 | `git_commit` | Stages and commits a named list of files; enforces a per-session budget and confirmation checkpoints |
@@ -31,12 +33,31 @@ Vibe-coded repos accumulate fast: functions nobody calls, copy-pasted logic in t
 
 ### Status
 
-The five analyses `scan_repo` reports — dead code, duplicates, god files, the
-dependency graph and cycle detection — are each covered by tests and verified by
-running the scanner against this repository. Python is the best-exercised
-language by a distance; the JavaScript, TypeScript and Go adapters share the
-same machinery but have far less test coverage, so treat their findings as
-indicative. `write_fix` will not apply a diff that does not match the file.
+Verified against **21 open-source repositories** across three validation
+sweeps — django, flask, fastapi, scrapy, pydantic, requests, express, axios,
+react, vue, svelte, zod, nest, cobra, gin, caddy, prometheus, okhttp, ktor,
+nowinandroid and ripgrep. Those sweeps found and closed **17 defects**,
+including two languages whose tree-sitter queries had never compiled at all
+and a Python dependency graph that had been mostly missing for nine
+releases. Every one is reproduced and documented in
+[IMPROVEMENTS.md](IMPROVEMENTS.md).
+
+225 tests, CI on Linux and Windows across Python 3.11–3.14.
+
+What is still true, and worth knowing before you trust a number:
+
+- **A Go dependency graph is roughly 1% resolved.** Go imports are module
+  paths that need `go.mod` to resolve; caddy reports 31 edges from 3,321
+  imports. Everything else about Go works.
+- **A whole-repo scan of a large project is big** — about 0.74 MB for 2,500
+  files. Read `summary` and use `get_chunk`; do not hand a full scan of a
+  large repository to a model.
+- **Dead-code detection is name-based**, with no type resolution. It is
+  deliberately biased toward missing a finding rather than inventing one,
+  because the advice is "delete this".
+- **`write_fix` leaves a recovery path on every path.** It will not apply a
+  diff that does not match the file, and it keeps a byte-exact backup
+  whenever git could not give the file back.
 
 ### Also included
 
@@ -345,8 +366,7 @@ Those three keys are the whole file. Every one of them is read.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). If you used 0.1.0, re-scan: three of the four
-analyses returned meaningless output.
+See [CHANGELOG.md](CHANGELOG.md). **If you used any earlier version, re-scan.** Three validation sweeps changed what the analyses report: TypeScript and Go parsed nothing at all before 0.3.0, Python dependency graphs were mostly missing before 0.4.0, and dead-code findings in Go, Kotlin and TypeScript included whole classes of false positive.
 
 ## License
 
