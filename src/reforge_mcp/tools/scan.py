@@ -237,6 +237,84 @@ def scan_repo(
     return report
 
 
+# What crosses the MCP boundary has to fit in a caller's context. A
+# 2,500-file repository produced a 0.74 MB report and nest 0.90 MB, roughly
+# 180-220k tokens - more than a caller can spend on one tool result, so the
+# headline use, pointing a model at your repo, failed on exactly the
+# repositories people try first.
+#
+# scan_repo() itself still returns everything, because get_health_score,
+# score_risk and infer_architecture read it in full. Only the wire form is
+# capped, which is why this is not a change to that contract.
+_MAX_ITEMS = 200
+
+# A duplicate group carries every location, so it is far fatter than an edge.
+_MAX_DUPLICATE_GROUPS = 50
+
+# One ktor group held 913 locations - 50 groups came to 189 KB of the 289 KB
+# response. Nobody reads the 913th copy of the same body.
+_MAX_DUPLICATE_LOCATIONS = 10
+
+
+def _cap_locations(group: Any) -> Any:
+    """Keep a readable sample of a duplicate group, with the real count."""
+    if not isinstance(group, dict):
+        return group
+    locations = group.get("locations")
+    if not isinstance(locations, list) or len(locations) <= _MAX_DUPLICATE_LOCATIONS:
+        return group
+    trimmed = dict(group)
+    trimmed["locations_total"] = len(locations)
+    trimmed["locations"] = locations[:_MAX_DUPLICATE_LOCATIONS]
+    return trimmed
+
+
+def cap_report(report: dict[str, Any]) -> dict[str, Any]:
+    """
+    Trim a scan report for a caller, keeping every count exact.
+
+    A trimmed list gains `<key>_total`, and `truncated` maps each trimmed
+    key to its real length, so a short list is never mistaken for a
+    complete one. The report passed in is not modified.
+    """
+    truncated: dict[str, int] = {}
+
+    def trim(container: dict[str, Any], key: str, limit: int) -> None:
+        items = container.get(key)
+        if not isinstance(items, list) or len(items) <= limit:
+            return
+        container[f"{key}_total"] = len(items)
+        container[key] = items[:limit]
+        truncated[key] = len(items)
+
+    capped = dict(report)
+    for key, limit in (
+        ("dead_code", _MAX_ITEMS),
+        ("duplicates", _MAX_DUPLICATE_GROUPS),
+        ("god_files", _MAX_ITEMS),
+        ("subprojects", _MAX_ITEMS),
+    ):
+        trim(capped, key, limit)
+
+    groups = capped.get("duplicates")
+    if isinstance(groups, list):
+        capped["duplicates"] = [_cap_locations(g) for g in groups]
+
+    if isinstance(capped.get("dep_graph"), dict):
+        graph = dict(capped["dep_graph"])
+        for key in ("edges", "nodes", "circular"):
+            trim(graph, key, _MAX_ITEMS)
+        capped["dep_graph"] = graph
+
+    # score_risk asks for these; they are never worth sending to a model
+    capped.pop("references_by_file", None)
+    capped.pop("lines_by_file", None)
+
+    if truncated:
+        capped["truncated"] = truncated
+    return capped
+
+
 def _load_ignore_dirs(root: Path) -> set[str]:
     """
     Load ignore directories from reforge.toml if present.

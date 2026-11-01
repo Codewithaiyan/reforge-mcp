@@ -10,7 +10,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from .tools.git import git_commit
-from .tools.scan import get_health_score, scan_repo
+from .tools.scan import cap_report, get_health_score, scan_repo
 from .tools.chunk import get_chunk
 from .tools.fix import write_fix
 from .scanner.risk import score_risk
@@ -35,10 +35,15 @@ def scan_repo_tool(
     root_path: str,
     languages: list[str] | None = None,
     include_tests: bool = True,
-    max_depth: int = 10,
 ) -> dict[str, Any]:
-    """Scan a repository and return a structured analysis report."""
-    return scan_repo(root_path, languages, include_tests, max_depth)
+    """
+    Scan a repository and return a structured analysis report.
+
+    Long lists are capped so the result fits in a caller's context. Each
+    capped list gains a `<key>_total`, and `truncated` names every key that
+    was shortened with its real length. `summary` is always complete.
+    """
+    return cap_report(scan_repo(root_path, languages, include_tests))
 
 
 # ---------------------------------------------------------------------------

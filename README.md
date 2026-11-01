@@ -49,9 +49,11 @@ What is still true, and worth knowing before you trust a number:
 - **A Go dependency graph is roughly 1% resolved.** Go imports are module
   paths that need `go.mod` to resolve; caddy reports 31 edges from 3,321
   imports. Everything else about Go works.
-- **A whole-repo scan of a large project is big** — about 0.74 MB for 2,500
-  files. Read `summary` and use `get_chunk`; do not hand a full scan of a
-  large repository to a model.
+- **A whole-repo scan of a large project is summarised, not complete.** Long
+  lists are capped so the result fits in a caller's context — a 3,000-file
+  repository comes back around 170 KB instead of 1.2 MB. Every count stays
+  exact, and `truncated` names each list that was shortened with its real
+  length, so a short list is never mistaken for a complete one.
 - **Dead-code detection is name-based**, with no type resolution. It is
   deliberately biased toward missing a finding rather than inventing one,
   because the advice is "delete this".
