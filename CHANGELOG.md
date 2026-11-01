@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.2 - 2026-11-01
+
+No change to any analysis. The package is now listed as a skill as well as an
+MCP server, and reports its own version correctly.
+
+### Fixed
+
+`reforge_mcp.__version__` said `0.1.0`. It had been a literal in
+`__init__.py` since the first release and had drifted at every one since, so
+anything reading the version from the package was told 0.1.0 while pyproject
+said 0.4.1. It now comes from installed package metadata, which makes
+`pyproject.toml` the only place a version number is written.
+
+### Added
+
+`skills/reforge/SKILL.md` — when to reach for these tools, the order the ten
+are meant to be called in, and the findings that need a human before a
+deletion. The tool schemas cannot carry that; a skill can.
+
+### Changed
+
+`actions/checkout` to v5 and `actions/setup-python` to v6 in both workflows,
+which were being forced onto Node 24 with a deprecation warning. The README
+names Kotlin in the one place the language list had missed it.
+
 ## 0.4.1 - 2026-11-01
 
 ### Fixed - the scan report did not fit in the context of the thing that asked for it
