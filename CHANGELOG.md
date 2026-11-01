@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.3 - 2026-11-01
+
+### Fixed
+
+The MCP `initialize` handshake reported FastMCP's version as the server's own.
+`FastMCP(name=...)` was constructed without `version=`, so a client asking what
+it had just connected to was told `reforge-mcp 3.4.11` — the version of the
+framework, in the one place a user actually sees a version. It now reports the
+package version. Found by driving the installed console script over stdio,
+which is the only way this surfaces: nothing in process reads `serverInfo`.
+
 ## 0.4.2 - 2026-11-01
 
 No change to any analysis. The package is now listed as a skill as well as an

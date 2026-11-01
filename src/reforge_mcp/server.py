@@ -9,6 +9,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from . import __version__
 from .tools.git import git_commit
 from .tools.scan import cap_report, get_health_score, scan_repo
 from .tools.chunk import get_chunk
@@ -22,7 +23,7 @@ from .utils.state import (
     startup_tasks,
 )
 
-mcp = FastMCP(name="reforge-mcp")
+mcp = FastMCP(name="reforge-mcp", version=__version__)
 
 
 # ---------------------------------------------------------------------------
