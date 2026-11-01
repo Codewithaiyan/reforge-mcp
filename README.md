@@ -323,7 +323,7 @@ reforge-mcp/
 │   │   ├── fix.py             # write_fix — diff apply + rollback
 │   │   └── git.py             # git_commit — atomic commits with budget enforcement
 │   ├── scanner/
-│   │   ├── parser.py          # tree-sitter adapters (Python, JS/TS, Go) + reference collection
+│   │   ├── parser.py          # tree-sitter adapters (Python, JS/TS, Go, Kotlin) + reference collection
 │   │   ├── dead_code.py       # unreferenced symbol detection
 │   │   ├── duplicates.py      # body-hash duplicate detection
 │   │   ├── architecture.py    # project-shape inference
