@@ -138,3 +138,6 @@ _Nothing yet — baseline recorded 2026-10-24._
 - [x] R58 — exempt Go init() and methods from dead-code detection (0.3.2)
 - [ ] Go imports are module paths; resolving them needs go.mod
 - [ ] `package.json` "main" and tsconfig path mappings are unread
+- [x] R60 — match the test-command allowlist on parsed tokens, not a string prefix (0.3.3)
+- [x] R61 — keep the backup when git cannot recover the patched file (0.3.3)
+- [x] R62 — bound every runtime dependency (0.3.3)

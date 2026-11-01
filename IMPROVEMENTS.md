@@ -1554,3 +1554,87 @@ Scale is acceptable — django is 2,984 files in 43 seconds.
   clone. Honest misses.
 - Go imports are still module paths needing `go.mod`; gin resolves 14 edges of
   521 imports and cobra none, which its single package makes correct.
+
+
+## R60 — the test-command allowlist could be walked past
+
+**Reported by:** a risk audit, 2026-11-01, asked for after both sweeps closed.
+
+**Evidence:** `validate_test_command` matched a **raw string prefix**, so
+anything beginning with an allowed command was accepted.
+
+```
+ALLOWED  'npm run test:evil'      arbitrary npm script
+ALLOWED  'gradle testEvilTask'    arbitrary gradle task
+ALLOWED  'pytestevil'             argv[0] is not pytest
+ALLOWED  'pytest-evil --go'
+ALLOWED  'go testdata-exfil'
+```
+
+**Why it mattered:** `npm` and `gradle` exist on any development machine, and
+the subcommand was the caller's to choose, so those two ran arbitrary code from
+`package.json` or `build.gradle`. The allowlist is the boundary between "run
+the project's tests" and "run anything", and it is the only tool in this server
+that executes a command at all. The threat is a confused or prompt-injected
+caller, which is exactly what the allowlist exists to stop.
+
+The shell was never involved — `subprocess` is called with an argv list and
+`stdin=DEVNULL` — so the chaining blocklist (`;`, `&&`, backticks) was already
+defence in depth rather than the boundary. It held; the allowlist did not.
+
+**Resolution:** the command and each allowed entry are both parsed with
+`shlex.split`, and an entry matches only when its tokens equal the leading
+tokens of the command. `npm run test` must be the first three tokens, not a
+prefix of the string. An unparseable command is rejected rather than guessed at.
+
+All five bypasses are blocked; `pytest tests/ -q`, `npm run test` and
+`go test ./...` still pass. One parametrised test per bypass.
+
+## R61 — a patch that applied left nothing to go back to
+
+**Evidence:** the same audit. `write_fix` deletes its backup on success, so a
+diff that applies cleanly and is nevertheless **wrong** destroyed the original
+with no recovery path for content git did not already hold.
+
+**Root cause:** the backup exists to undo a *failed* apply or a *failed* test
+run. Nobody had asked what undoes a successful one. With a committed file
+`git checkout -- <file>` answers that; with uncommitted or untracked content,
+nothing did.
+
+**Resolution rejected first:** refusing to patch a file with uncommitted
+changes, which is what this audit originally proposed. It breaks the ordinary
+loop — a successful `write_fix` leaves the file dirty, so the next patch on the
+same file would be refused — and an agent would simply pass an override flag,
+which defeats the guard.
+
+**Resolution:** the invariant is that a recovery path always survives. The
+result now carries `git_state` (`clean`, `modified`, `untracked`, `no_repo`)
+and `backup`. The backup is deleted only when `git_state` is `clean`, because
+git can then return the file; in every other case it stays and its path is
+returned. No refusal, no flag, no bypass to forget.
+
+**Cost:** a `.reforge-bak` file is left behind when the target was not
+committed. The tool says where it is and the caller deletes it once the change
+is confirmed — a file to tidy up is a better failure than work that cannot be
+recovered.
+
+## R62 — every dependency was unbounded
+
+**Evidence:** the same audit. All eight runtime dependencies were `>=` with no
+ceiling, and `fastmcp>=0.1.0` was a floor no one had ever verified against the
+3.x API this code uses.
+
+**Why it mattered:** a tree-sitter grammar can rename a node type in a minor
+release, which rejects a query and makes every file of that language fail to
+parse. That is R46 exactly, and it shipped for nine versions before a sweep
+found it. Nothing stopped a future release doing it again on a user's machine,
+where no sweep would run.
+
+**Resolution:** grammars are capped at the next minor and libraries at the next
+major, at the versions the test suite and both sweeps actually ran against. The
+`fastmcp` floor is raised to the major that is tested. A fresh resolve picks
+fastmcp 3.4.11 and tree-sitter 0.26.0, both inside the caps, and all five
+adapters load.
+
+This does not make a grammar change harmless — it makes it a resolution error
+at install time instead of silent parse failures at scan time.

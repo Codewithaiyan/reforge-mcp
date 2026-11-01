@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.3.3 - 2026-11-01
+
+A risk audit, run after both validation sweeps closed. One security hole, one
+missing recovery path, and dependencies that could break on their own.
+
+### Security - the test-command allowlist could be walked past
+
+`write_fix` can run a test command, guarded by an allowlist. It matched a raw
+string prefix, so anything *beginning* with an allowed command was accepted:
+
+```
+ALLOWED  'npm run test:evil'      ALLOWED  'gradle testEvilTask'
+ALLOWED  'pytestevil'             ALLOWED  'go testdata-exfil'
+```
+
+`npm` and `gradle` exist on any development machine and the subcommand was the
+caller's to choose, so those two ran arbitrary code from `package.json` or
+`build.gradle`.
+
+The command and each allowed entry are now both parsed, and an entry matches
+only when its tokens equal the leading tokens of the command. All five bypasses
+are blocked; real test commands still pass. The shell was never involved, so
+the chaining blocklist was always defence in depth — it held, the allowlist did
+not.
+
+### Fixed - a patch that applied left nothing to go back to
+
+`write_fix` deleted its backup on success. A diff can apply cleanly and still
+be wrong, and then the original was gone, with no recovery for anything git did
+not already hold.
+
+The result now carries `git_state` (`clean`, `modified`, `untracked`,
+`no_repo`) and `backup`. The backup is deleted only when the tree is clean,
+because `git checkout -- <file>` can then return the file; otherwise it stays
+and its path is returned. Delete it once the change is confirmed.
+
+Refusing to patch an uncommitted file was tried and rejected: a successful
+`write_fix` leaves the file dirty, so the next patch on the same file would be
+refused, and an agent would simply pass an override flag.
+
+### Changed - every dependency is bounded
+
+All eight runtime dependencies were `>=` with no ceiling, and `fastmcp>=0.1.0`
+was a floor never verified against the 3.x API this code uses.
+
+A tree-sitter grammar can rename a node type in a minor release, which rejects
+a query and makes every file of that language fail to parse — that is exactly
+what shipped for nine versions as R46. Grammars are now capped at the next
+minor and libraries at the next major, at the versions the test suite and both
+sweeps ran against.
+
+This makes a breaking grammar release a resolution error at install time rather
+than silent parse failures at scan time.
+
 ## 0.3.2 - 2026-11-01
 
 A second validation sweep over seven more repositories: vuejs/core,

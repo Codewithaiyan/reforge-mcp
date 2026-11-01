@@ -12,6 +12,57 @@ from ..utils.diff import apply_diff
 from ..utils.security import SecurityError, validate_path, validate_test_command
 
 
+def _git_safety_net(target: Path) -> str:
+    """
+    Whether git already holds a copy of this file's current contents.
+
+    "clean" means a wrong patch is recoverable with `git checkout -- <file>`,
+    so the backup is not needed once the patch lands. Anything else means the
+    content exists only on disk, and deleting the backup would leave no way
+    back from a diff that applies but is wrong.
+
+    Never raises: a repository this cannot read is treated as no safety net,
+    which is the cautious answer.
+    """
+    try:
+        from git import (
+            GitCommandError,
+            InvalidGitRepositoryError,
+            NoSuchPathError,
+            Repo,
+        )
+
+        repo = Repo(target.parent, search_parent_directories=True)
+        status = repo.git.status("--porcelain", "--", str(target))
+    except (
+        InvalidGitRepositoryError,
+        NoSuchPathError,
+        GitCommandError,
+        OSError,
+        ImportError,
+    ):
+        return "no_repo"
+
+    if not status.strip():
+        return "clean"
+    return "untracked" if status.lstrip().startswith("??") else "modified"
+
+
+def _settle_backup(bak: Path, safety_net: str) -> dict[str, Any]:
+    """
+    Drop the backup only when git can give the file back.
+
+    A diff can apply cleanly and still be wrong, and on success the original
+    is gone. With a clean tree `git checkout -- <file>` recovers it; with
+    uncommitted or untracked content nothing else holds a copy, so the backup
+    stays and its path is returned.
+    """
+    if safety_net == "clean":
+        bak.unlink(missing_ok=True)
+        return {"git_state": safety_net, "backup": None}
+    return {"git_state": safety_net, "backup": str(bak)}
+
+
 def _restore(bak: Path, target: Path) -> bool:
     """
     Put the backup back, byte for byte, and remove it.
@@ -58,6 +109,8 @@ def write_fix(
     # it back re-encoded every line ending, so a rollback on Windows
     # returned an LF file as CRLF - a no-op call rewrote the whole file.
     # The old fixed '.bak' name also clobbered a backup of the user's own.
+    safety_net = _git_safety_net(resolved)
+
     try:
         handle, bak_name = tempfile.mkstemp(
             dir=resolved.parent,
@@ -85,8 +138,13 @@ def write_fix(
         }
 
     if test_command is None:
-        bak.unlink(missing_ok=True)
-        return {"success": True, "test_output": None, "error": None, "rolled_back": False}
+        return {
+            "success": True,
+            "test_output": None,
+            "error": None,
+            "rolled_back": False,
+            **_settle_backup(bak, safety_net),
+        }
 
     # No shell: the command is split here and the executable resolved by name,
     # so nothing in it can be interpreted as shell syntax. shutil.which also
@@ -133,8 +191,13 @@ def write_fix(
             test_output = out.read().decode("utf-8", "replace") + note
 
     if passed:
-        bak.unlink(missing_ok=True)
-        return {"success": True, "test_output": test_output, "error": None, "rolled_back": False}
+        return {
+            "success": True,
+            "test_output": test_output,
+            "error": None,
+            "rolled_back": False,
+            **_settle_backup(bak, safety_net),
+        }
 
     # Tests failed — restore original file
     _restore(bak, resolved)

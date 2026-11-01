@@ -70,7 +70,15 @@ def write_fix_tool(
     test_command: str | None = None,
     allowed_test_commands: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Apply a unified diff to a file; run optional tests and auto-rollback on failure."""
+    """
+    Apply a unified diff to a file; run optional tests and auto-rollback on failure.
+
+    The file ends up either correctly changed or byte-identical, never between.
+    `git_state` in the result says whether git could recover it, and when it
+    could not — untracked, uncommitted, or no repository — `backup` is the path
+    to a byte-exact copy of the original, left in place deliberately. Delete it
+    once the change is confirmed.
+    """
     return write_fix(file_path, diff_str, repo_root, test_command, allowed_test_commands)
 
 

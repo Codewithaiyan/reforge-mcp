@@ -346,3 +346,34 @@ class TestDefaultTestCommandAllowlist:
         # an empty allowlist used to reject every command, so write_fix could
         # never run tests unless its caller passed a list of its own
         assert validate_test_command("pytest", []) is True
+
+
+class TestAllowlistMatchesTokensNotText:
+    """
+    The allowlist was a raw string prefix match, so anything beginning with an
+    allowed command passed. npm and gradle exist on any development machine, so
+    "npm run test:evil" and "gradle testEvilTask" ran caller-chosen code.
+    """
+
+    def test_a_real_test_command_is_allowed(self) -> None:
+        assert validate_test_command("pytest tests/ -q", None) is True
+        assert validate_test_command("npm run test", None) is True
+        assert validate_test_command("go test ./...", None) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytestevil",
+            "pytest-evil --go",
+            "npm run test:evil",
+            "gradle testEvilTask",
+            "go testdata-exfil",
+        ],
+    )
+    def test_a_command_that_merely_starts_like_one_is_blocked(self, command: str) -> None:
+        with pytest.raises(SecurityError):
+            validate_test_command(command, None)
+
+    def test_an_unparseable_command_is_blocked(self) -> None:
+        with pytest.raises(SecurityError):
+            validate_test_command('pytest "unclosed', None)

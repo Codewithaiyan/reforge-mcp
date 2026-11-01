@@ -10,6 +10,7 @@ Each function includes detailed error messages to help users understand
 what was blocked and why - this is a learning project, so the "why" matters.
 """
 
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -278,9 +279,19 @@ def validate_test_command(
                 f"dangerous operator '{op}'. Only single commands are allowed."
             )
 
-    # Check if command starts with an allowed command
+    # Compare parsed tokens, not raw text. A string prefix let through
+    # "npm run test:evil", "gradle testEvilTask" and "pytestevil" - npm and
+    # gradle exist on any dev machine, so those two ran caller-chosen code.
+    try:
+        tokens = shlex.split(command_stripped)
+    except ValueError as e:
+        raise SecurityError(f"Command blocked: cannot parse '{command_stripped}': {e}")
+    if not tokens:
+        raise SecurityError("Empty command: test command cannot be empty")
+
     for allowed in allowed_commands:
-        if command_stripped.startswith(allowed):
+        prefix = shlex.split(allowed)
+        if prefix and tokens[: len(prefix)] == prefix:
             return True
 
     # Command not in allowlist

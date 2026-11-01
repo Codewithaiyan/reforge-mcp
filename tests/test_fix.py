@@ -233,15 +233,98 @@ class TestWriteFixPreservesBytes:
         assert result["success"] is False
         assert f.read_bytes() == original
 
-    def test_no_backup_is_left_behind_on_any_path(self, tmp_path: Path) -> None:
+    def test_no_tmp_file_is_left_behind_on_any_path(self, tmp_path: Path) -> None:
         f = tmp_path / "t.py"
         f.write_bytes(LF_SOURCE)
         write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
         write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))  # now refused
 
+        # a .reforge-bak may survive on purpose when git cannot recover the
+        # file; the applier's own .tmp never should
         leftovers = [
             q.name
             for q in tmp_path.iterdir()
-            if ".reforge-bak" in q.name or q.name.endswith((".bak", ".tmp"))
+            if q.name.endswith((".bak", ".tmp"))
         ]
         assert leftovers == []
+
+
+class TestWriteFixAlwaysLeavesARecoveryPath:
+    """
+    A diff can apply cleanly and still be wrong, and on success the original
+    is gone. Either git holds a copy or the backup does - never neither.
+    """
+
+    @staticmethod
+    def _repo(tmp_path: Path, committed: bool) -> Path:
+        import subprocess
+
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        if committed:
+            subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+            subprocess.run(
+                [
+                    "git", "-C", str(tmp_path),
+                    "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "init",
+                ],
+                check=True,
+            )
+        return f
+
+    def test_a_committed_file_needs_no_backup(self, tmp_path: Path) -> None:
+        f = self._repo(tmp_path, committed=True)
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert result["success"] is True
+        assert result["git_state"] == "clean"
+        assert result["backup"] is None
+
+    def test_an_untracked_file_keeps_its_backup(self, tmp_path: Path) -> None:
+        f = self._repo(tmp_path, committed=False)
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert result["success"] is True
+        assert result["git_state"] == "untracked"
+        assert Path(result["backup"]).read_bytes() == LF_SOURCE
+
+    def test_a_modified_file_keeps_its_backup(self, tmp_path: Path) -> None:
+        f = self._repo(tmp_path, committed=True)
+        f.write_bytes(LF_SOURCE + b"# an uncommitted edit" + bytes([10]))
+        before = f.read_bytes()
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert result["success"] is True
+        assert result["git_state"] == "modified"
+        assert Path(result["backup"]).read_bytes() == before
+
+    def test_outside_a_repo_the_backup_is_kept(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+
+        result = write_fix(str(f), LF_DIFF, repo_root=str(tmp_path))
+
+        assert result["git_state"] == "no_repo"
+        assert Path(result["backup"]).read_bytes() == LF_SOURCE
+
+    def test_a_rollback_still_removes_the_backup(self, tmp_path: Path) -> None:
+        # the file is already back to its original, so nothing needs keeping
+        f = tmp_path / "t.py"
+        f.write_bytes(LF_SOURCE)
+
+        result = write_fix(
+            str(f),
+            LF_DIFF,
+            repo_root=str(tmp_path),
+            test_command="python -c exit(1)",
+            allowed_test_commands=["python"],
+        )
+
+        assert result["rolled_back"] is True
+        assert f.read_bytes() == LF_SOURCE
+        assert not list(tmp_path.glob("*.reforge-bak"))

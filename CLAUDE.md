@@ -46,6 +46,13 @@ tests/               one file per module, pytest, no fixtures framework beyond t
   `tools/` or `scanner/` and do nothing else. Logic in `server.py` is untestable.
 - **State writes are `.tmp` -> rename.** See `utils/state.py:save_state`. Never
   write `reforge-state.json` in place.
+- **A recovery path always survives a `write_fix`** (R61). The backup is
+  deleted only when `git_state` is `clean`, because git can then return the
+  file; otherwise it is kept and its path returned. Never delete it
+  unconditionally again: a diff can apply and still be wrong.
+- **The test-command allowlist matches parsed tokens** (R60), never a
+  string prefix. `npm run test` must be the first three tokens, or
+  `npm run test:evil` runs whatever package.json says.
 - **`write_fix` must leave the file either correctly changed or byte-identical,
   on every path.** The backup is a byte copy under a unique `tempfile` name, so
   restoring it is a no-op even where nothing needed restoring; if a new
@@ -60,7 +67,7 @@ tests/               one file per module, pytest, no fixtures framework beyond t
 
 [IMPROVEMENTS.md](IMPROVEMENTS.md) is a reviewed, reproduced list of every
 defect found so far and how it was resolved; [TASK.md](TASK.md) tracks the
-fixes. R1-R59 are closed as of 0.3.2. What remains true:
+fixes. R1-R62 are closed as of 0.3.3. What remains true:
 
 - **TypeScript and Go only began working in 0.3.0** (R46, R47): their
   queries had never compiled, so every file of those languages returned a
