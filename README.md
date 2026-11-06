@@ -13,9 +13,9 @@
 
 An MCP server that gives Claude Code structured tools over your codebase — dead code, duplicates, god files, the dependency graph — and tells you what it could not read.
 
-That last part is the point. Every number comes with its own coverage: `coverage` says what fraction of your source was analysed, `parse_failures` says what the parser choked on, `unresolved_relative_imports` says when the dependency graph is incomplete, and `get_health_score` returns `null` rather than a flattering number when it could not read your repository at all.
+Reports expose their limits: the health result's `coverage` is the fraction of counted source files analysed, `summary.parse_failures` counts files the parser could not read, and `dep_graph.unresolved_relative_imports` counts unresolved relative imports of supported source files. `get_health_score` returns `score: null` when no files were analysed. Coverage is not test coverage, and unsupported source extensions are counted from a fixed list.
 
-**Also available as a skill:** listed on Agensi (link to follow) — the skill tells Claude when to reach for these tools and in what order. The skill source is in [`skills/reforge/SKILL.md`](skills/reforge/SKILL.md).
+The skill source is in [`skills/reforge/SKILL.md`](skills/reforge/SKILL.md).
 
 ---
 
@@ -23,22 +23,29 @@ That last part is the point. Every number comes with its own coverage: `coverage
 
 ## What it does
 
-Vibe-coded repos accumulate fast: functions nobody calls, copy-pasted logic in three files, one 900-line god module that does everything, circular imports that break at runtime. Spotting this manually takes hours; fixing it safely takes longer. `reforge-mcp` exposes your codebase to Claude Code as a set of structured tools so it can analyse, prioritise, and apply fixes autonomously — one atomic commit at a time.
+Repos built quickly with AI can accumulate unused functions, copied logic, oversized modules and circular imports. `reforge-mcp` gives Claude Code structured findings so it can inspect the source, prioritize changes, apply patches with optional tests, and create local Git commits. Findings and risk scores are heuristics that need review before deleting or changing code.
 
 ### The 10 MCP tools
 
-| Tool | What it does |
-|---|---|
-| `scan_repo` | AST-parses your repo (Python, JS, TS, Go, Kotlin) and returns dead code, duplicates, god files, the dependency graph with any cycles, and monorepo subprojects |
-| `get_chunk` | Reads an exact line-range slice from any file — lets Claude fetch only what it needs without blowing its context window |
-| `write_fix` | Applies a unified diff, runs an optional test command, and rolls the file back if either the diff or the tests fail |
-| `git_commit` | Stages and commits a named list of files; enforces a per-session budget and confirmation checkpoints |
-| `read_memory` | Reads a value from `reforge-state.json` — architecture hypotheses, fix log, pending work, health history |
-| `write_memory` | Writes any value atomically to `reforge-state.json` |
-| `infer_architecture` | Scans, then guesses the project's shape (REST API, CLI, library, web frontend), its entry points and logical modules, and stores the result as `architecture_hypothesis` |
-| `score_risk` | Scores how dangerous it is to change one symbol, 0–100, from inbound references, test coverage, file size and circular deps — with a recommendation string |
-| `get_health_score` | Computes a 0–100 health score from scan metrics and appends a timestamped entry to the project's health history |
-| `generate_changelog` | Writes `REFORGE_CHANGES.md` from the current session state, with the score delta, fixes applied and pending items |
+These are the exact registered MCP names; Python wrapper functions have a `_tool` suffix.
+
+| Registered tool | What it does | File effects |
+|---|---|---|
+| `scan_repo` | Reports dead-code candidates, duplicates, oversized modules, dependencies and subprojects for supported source files. | Read-only |
+| `get_chunk` | Reads an inclusive, 1-indexed line range from a UTF-8 file. | Read-only |
+| `get_health_score` | Computes health and analysis coverage, then appends a timestamped history entry. | Writes state and backups |
+| `write_fix` | Patches one existing file, optionally runs tests, and attempts rollback if the patch or tests fail. | Writes source and recovery backups; tests may write files |
+| `git_commit` | Stages named files and commits the index within session budgets and confirmation checkpoints. | Writes Git index/history; may switch branches and run hooks |
+| `infer_architecture` | Infers a likely pattern, entry points and modules, then saves `architecture_hypothesis`. | Writes state and backups |
+| `read_memory` | Reads a top-level state value, with defaults when state is missing or unreadable. | Read-only |
+| `write_memory` | Creates or replaces a top-level state value through a staged write. | Writes state and backups |
+| `score_risk` | Estimates change risk from symbol-name references, referencing tests, file size and cycles. | Read-only |
+| `generate_changelog` | Writes a timestamped Markdown report from saved health history, fixes and pending work. | Overwrites `REFORGE_CHANGES.md` |
+
+State lives in `reforge-state.json`. State writes rotate up to five timestamped
+backups. `infer_architecture` is a writing tool despite doing analysis first.
+The server entry point also adds Reforge entries to `.gitignore` and removes
+top-level `*.tmp` files in its working directory at startup.
 
 ### Status
 
@@ -51,37 +58,38 @@ and a Python dependency graph that had been mostly missing for nine
 releases. Every one is reproduced and documented in
 [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
-225 tests, CI on Linux and Windows across Python 3.11–3.14.
+CI runs the test suite on Linux and Windows with Python 3.11 and 3.14.
 
 What is still true, and worth knowing before you trust a number:
 
 - **A Go dependency graph is roughly 1% resolved.** Go imports are module
   paths that need `go.mod` to resolve; caddy reports 31 edges from 3,321
-  imports. Everything else about Go works.
+  imports. Treat Go dependency and risk results as incomplete.
 - **A whole-repo scan of a large project is summarised, not complete.** Long
-  lists are capped so the result fits in a caller's context — a 3,000-file
+  lists are capped to reduce the context needed — a 3,000-file
   repository comes back around 170 KB instead of 1.2 MB. Every count stays
   exact, and `truncated` names each list that was shortened with its real
   length, so a short list is never mistaken for a complete one.
 - **Dead-code detection is name-based**, with no type resolution. It is
   deliberately biased toward missing a finding rather than inventing one,
   because the advice is "delete this".
-- **`write_fix` leaves a recovery path on every path.** It will not apply a
-  diff that does not match the file, and it keeps a byte-exact backup
-  whenever git could not give the file back.
+- **Successful patches preserve recovery information.** `write_fix` rejects
+  mismatched diff hunks and keeps a byte-exact `.reforge-bak` copy after a
+  successful patch when the file was modified, untracked or outside Git.
+  When Git already holds the original contents, `backup` is null.
 
 ### Also included
 
 - **Health score trending** — every `get_health_score` call appends to `health_history` so you can chart improvement over time
 - **Persistent memory** — `reforge-state.json` survives across Claude Code sessions; stores the architecture hypothesis, fix log and pending work
-- **Monorepo support** — `scan_repo` detects Python, JavaScript, TypeScript, Go and Kotlin subprojects from their marker files and returns the correct `test_command` per subproject
+- **Monorepo support** — `scan_repo` finds subprojects from `pyproject.toml`, `setup.py`, `package.json`, `tsconfig.json` and `go.mod`. It suggests a conventional test command; it does not verify that command or detect Kotlin/Gradle subprojects. When markers overlap, the first matching marker wins.
 - **Changelog generation** — `REFORGE_CHANGES.md` is written on demand with score deltas, applied fixes, and pending items
 
 ---
 
 ## Installation
 
-**Prerequisites:** Python 3.11+, Claude Code CLI, Git
+**Prerequisites:** Python 3.11+, Git, and Claude Code or Claude Desktop.
 
 **API keys:** Reforge does not require `ANTHROPIC_API_KEY` or another model API
 key. Its analysis and state tools run locally without calling an external
@@ -89,69 +97,66 @@ model; Claude Code or Claude Desktop manages its own model access. Test commands
 launched by `write_fix` and Git hooks invoked by `git_commit` may have their own
 network activity.
 
-### From PyPI (recommended)
+### Claude Code
+
+```bash
+pip install reforge-mcp
+claude mcp add reforge-mcp -- reforge-mcp
+```
+
+Run `claude mcp list` to check that `reforge-mcp` is registered, then start a
+new session to use its ten tools. The executable must be on the client's `PATH`.
+To request an upgrade, run `pip install --upgrade reforge-mcp`; the selected
+version also depends on your Python version and configured package index.
+
+### Claude Desktop
 
 ```bash
 pip install reforge-mcp
 ```
 
-The badge above shows what PyPI is actually serving. If `pip` gives you
-something older it is a cached index, and
-`pip install --no-cache-dir -U reforge-mcp` fixes it.
-
-### From source
-
-```bash
-git clone https://github.com/codewithaiyan/reforge-mcp.git
-cd reforge-mcp
-python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -e .
-```
-
-### Register it with Claude Code
-
-```bash
-claude mcp add reforge -- reforge-mcp
-```
-
-If `reforge-mcp` is not on your `PATH` — which is usual when you installed into
-a virtualenv — give the absolute path instead:
-
-```bash
-which reforge-mcp                 # Windows: where reforge-mcp
-claude mcp add reforge -- /path/from/the/line/above
-```
-
-`claude mcp list` should then show `reforge`, and the ten tools become available
-in your next session. No API key is needed: the server does no network calls and
-Claude Code supplies the model.
-
-<details>
-<summary>Using the Claude desktop app instead</summary>
-
-Add it to `claude_desktop_config.json` (`~/Library/Application Support/Claude/`
-on macOS, `%APPDATA%\Claude\` on Windows, `~/.config/claude/` on Linux):
+Add this to `claude_desktop_config.json`, merging it with any existing
+`mcpServers` entries:
 
 ```json
 {
   "mcpServers": {
-    "reforge": {
-      "command": "/absolute/path/to/reforge-mcp",
-      "args": [],
-      "env": {}
+    "reforge-mcp": {
+      "command": "reforge-mcp",
+      "args": []
     }
   }
 }
 ```
 
-</details>
+The config is in `~/Library/Application Support/Claude/` on macOS or
+`%APPDATA%\Claude\` on Windows. Restart Claude Desktop after saving. Its process
+must be able to find `reforge-mcp` on `PATH`; a terminal's activated virtualenv
+does not automatically change a desktop application's environment.
+
+### From source
+
+```bash
+git clone https://github.com/Codewithaiyan/reforge-mcp
+cd reforge-mcp
+python3 -m venv venv
+source venv/bin/activate          # PowerShell: .\venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+For a source install in a virtualenv, the executable is `venv/bin/reforge-mcp`
+(Windows: `venv\Scripts\reforge-mcp.exe`). If the client cannot find it, use its
+absolute path as the Claude Desktop `command` or after `--` in the Claude Code
+registration command. `which reforge-mcp` (PowerShell: `Get-Command reforge-mcp`)
+shows the executable from an activated environment.
 
 ---
 
 ## Usage
 
 ### Example session with Claude Code
+
+Illustrative session; the counts and commit hash below are examples.
 
 ```
 You: Use reforge-mcp to scan my repo at /home/me/myproject and fix the top issues.
@@ -164,19 +169,20 @@ The scan found:
 - 14 dead functions across 6 files
 - 3 duplicate implementations of `calculate_discount`
 - 1 god file: src/api/handlers.py (847 lines, 23 exports)
-- 2 circular dependencies: auth → middleware → auth
+- 1 circular dependency: auth → middleware → auth
 
+[calls get_health_score(repo_path="/home/me/myproject")]
 Health score: 47/100
 
 Let me fetch the duplicate implementations to confirm they're identical.
 
-[calls get_chunk("src/billing/utils.py", start_line=12, end_line=28)]
-[calls get_chunk("src/cart/helpers.py", start_line=5, end_line=21)]
+[calls get_chunk(file_path="/home/me/myproject/src/billing/utils.py", repo_root="/home/me/myproject", start_line=12, end_line=28)]
+[calls get_chunk(file_path="/home/me/myproject/src/cart/helpers.py", repo_root="/home/me/myproject", start_line=5, end_line=21)]
 
 Confirmed — identical bodies. I'll keep the one in src/billing/utils.py and have
 src/cart/helpers.py import it.
 
-[calls write_fix("src/cart/helpers.py", diff_str="...", test_command="pytest")]
+[calls write_fix(file_path="/home/me/myproject/src/cart/helpers.py", repo_root="/home/me/myproject", diff_str="...", test_command="pytest")]
 [calls git_commit("/home/me/myproject", files=["src/cart/helpers.py"], message="refactor: drop duplicate calculate_discount")]
 
 Committed: a3f91c2. Running next fix...
@@ -184,7 +190,8 @@ Committed: a3f91c2. Running next fix...
 
 ### Sample `scan_repo` output
 
-Real output, not an illustration. The repository behind it is four files:
+Illustrative excerpt from a four-file repository; additional summary and graph
+diagnostics are omitted here for brevity. The example has
 `calculate_discount` copy-pasted into `src/pricing.py` and `src/cart.py`, an
 unused `parse_legacy_csv` and `_old_validate`, and `auth.py` and `middleware.py`
 importing each other.
@@ -226,16 +233,18 @@ importing each other.
 }
 ```
 
-`checkout` is reported dead because nothing in those four files calls it — which
-is what the tool promises, and a reminder that a finding is a question for
-Claude to answer, not an instruction. On a monorepo, `subprojects` fills in from
+`checkout` is a dead-code candidate because nothing in those four files references
+its name. A finding is a question for Claude to check, not a deletion instruction.
+On a monorepo, `subprojects` fills in from
 the marker files it finds:
 
 ```json
-"subprojects": [
-  { "root": "frontend",        "language": "javascript", "test_command": "npm test" },
-  { "root": "services/worker", "language": "go",         "test_command": "go test ./..." }
-]
+{
+  "subprojects": [
+    { "root": "frontend",        "language": "javascript", "test_command": "npm test" },
+    { "root": "services/worker", "language": "go",         "test_command": "go test ./..." }
+  ]
+}
 ```
 
 Paths use your platform's separator, so they come back with backslashes on
@@ -272,7 +281,12 @@ Reforge works in three phases:
 
 `scan_repo` walks the repository with `parse_directory`, feeding each source file to the appropriate tree-sitter adapter (Python, JavaScript/TypeScript, Go or Kotlin). Tree-sitter builds a full AST — unlike regex, it understands nested scope, decorators, arrow functions, and generics. The adapters extract functions, classes, and imports into typed dataclasses.
 
-Each parsed file also reports every name it *uses*, collected from the AST while
+When Git reports a nonempty tracked-file list, only those files are analysed;
+outside Git or with an empty index, all eligible files are analysed. `languages`
+can filter supported languages. `include_tests` is currently accepted but does
+not filter test files, whether true or false.
+
+Each parsed file also collects reference names from the AST while
 skipping each definition's own name and the contents of comments and strings.
 From the parse results, three analyses run:
 
@@ -284,19 +298,26 @@ A dependency graph is built from resolved imports — `from x import y`, bare `i
 
 ### 2. Plan
 
-Claude Code receives the structured scan report and uses `get_chunk` to read specific line ranges before deciding what to fix and in what order. The architecture hypothesis, pending fix queue, and health history are all persisted in `reforge-state.json` via `read_memory` / `write_memory` so the plan survives a session restart.
+Claude Code receives the structured scan report and uses `get_chunk` to read specific line ranges before deciding what to fix and in what order. `infer_architecture` saves its hypothesis, and `get_health_score` appends history. The agent must use `write_memory` to maintain its fix log and pending queue; patches and commits do not update those lists automatically. `read_memory` retrieves saved values in later sessions.
 
 ### 3. Fix
 
-`write_fix` applies a unified diff atomically:
+`write_fix` validates a unified diff before writing the target:
 
-1. Creates a `.bak` backup of the target file
+1. Creates a unique byte-for-byte backup ending in `.reforge-bak` beside the existing target file
 2. Parses the diff into hunks and checks every hunk's context and removed lines against the file at the position its header claims
 3. Applies the hunks with line-offset tracking — or, if any hunk failed that check, writes nothing at all
 4. Runs the optional test command (validated against the allowlist)
-5. On any failure — a diff that does not match the file, test exit ≠ 0 — restores from `.bak` and returns `rolled_back: true`
+5. On a mismatched diff or test failure, attempts to restore the backup and returns `rolled_back: true`. This flag records the rollback path, not independent verification that restoration succeeded; filesystem failures can prevent recovery.
 
-`git_commit` stages only the listed files and creates an atomic commit via GitPython. It reads `session_budget` and `confirm_every` from `reforge.toml` and enforces them: once the session budget is exceeded commits are blocked; at every `confirm_every` checkpoint the tool returns `needs_confirmation: true` and waits for `confirmed: true` before proceeding. The count is held per repository for the life of the server process, so restarting the server starts a new session.
+`git_commit` stages the listed files and commits the Git index via GitPython.
+**Previously staged changes are also included**, so review the index first;
+`files_committed` echoes the requested file list, not the full commit contents.
+The tool reads `session_budget` and `confirm_every` from `reforge.toml`: commits
+are blocked when the budget is reached, and the next call after each
+`confirm_every` group returns `needs_confirmation: true` until retried with
+`confirmed: true`. The count is held per repository for the life of the server
+process, so restarting the server starts a new session. This tool does not push.
 
 ---
 
@@ -304,10 +325,10 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 
 | Boundary | Mechanism |
 |---|---|
-| Path traversal | Every file path is validated against `repo_root` before any read or write — paths that escape the repo root are rejected with `SecurityError` |
-| Binary / lock files | `should_skip_file()` blocks binaries, images, minified bundles, lock files and anything over 500 KB before it is parsed, read or patched |
+| Source-file boundaries | Parsing, `get_chunk` and `write_fix` validate source paths against the supplied repository boundary. Relative `file_path` values resolve from the server working directory, not `repo_root`. State/report tools use the caller-supplied `repo_path` as their destination |
+| File guards | Parsing skips configured binary/lock/minified files and files over 500 KiB. `get_chunk` retains the file-type guards but permits large files. `write_fix` does not apply those file-type/size guards |
 | Test command injection | `write_fix` validates `test_command` against an explicit allowlist (`pytest`, `python3 -m pytest`, `npm test`, `go test ./...`, etc.) before executing |
-| Atomic state writes | `reforge-state.json` is always written via `.tmp` → `rename` — a crash mid-write leaves an orphaned `.tmp`, not a corrupt file; `startup_tasks()` cleans these on boot |
+| Staged state writes | State is serialized to `reforge-state.tmp`, the previous file is backed up and removed, then the temporary file is renamed. This is not a fully atomic replacement: a crash between removal and rename can leave no state file. Startup removes top-level `*.tmp` files in its working directory |
 | Mismatched diffs | `apply_diff` rebuilds each hunk's expected old lines from its context and `-` lines and compares them against the file before mutating anything — a stale or wrong diff is rejected whole, leaving the file byte-identical |
 | Runaway test commands | The test command runs with no shell, with `stdin` closed and its output going to a file rather than a pipe. A prompt it cannot answer, or a grandchild process holding a pipe open, used to hang the server past its own timeout |
 | Local analysis | Reforge's analysis and state tools make no outbound API calls. The AI client's model requests, user-supplied test commands and Git hooks have their own network behavior |
@@ -318,7 +339,7 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 
 ```bash
 # Clone and install
-git clone https://github.com/codewithaiyan/reforge-mcp.git
+git clone https://github.com/Codewithaiyan/reforge-mcp
 cd reforge-mcp
 python3 -m venv venv && source venv/bin/activate
 pip install -e ".[dev]"
@@ -336,6 +357,7 @@ pytest --cov=src --cov-report=term-missing
 reforge-mcp/
 ├── src/reforge_mcp/
 │   ├── server.py              # FastMCP server — registers all 10 tools
+│   ├── tool_results.py        # TypedDict output schemas for MCP results
 │   ├── tools/
 │   │   ├── scan.py            # scan_repo, get_health_score, monorepo detection
 │   │   ├── chunk.py           # get_chunk — line-range file reads
