@@ -467,7 +467,7 @@ def infer_architecture_tool(
         ),
     ],
 ) -> ArchitectureResult:
-    """Infer a repository's architectural pattern and save its hypothesis to state.
+    """Infer a repository's architectural pattern and save its hypothesis to reforge-state.json.
     Use when: you need an initial map of the project's likely shape and entry points.
     Don't use when: you only need the previously saved hypothesis (use read_memory instead).
 
