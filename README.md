@@ -68,7 +68,7 @@ and a Python dependency graph that had been mostly missing for nine
 releases. Every one is reproduced and documented in
 [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
-CI runs the test suite on Linux and Windows with Python 3.11 and 3.14.
+CI runs lint and the test suite on Linux and Windows with Python 3.11, 3.12 and 3.14.
 
 What is still true, and worth knowing before you trust a number:
 
@@ -296,6 +296,10 @@ outside Git or with an empty index, all eligible files are analysed. `languages`
 can filter supported languages. `include_tests` is currently accepted but does
 not filter test files, whether true or false.
 
+A missing root or a root that is a file returns an explicit `error` report.
+Existing directories without Git are still supported, including empty directories
+and extracted source archives.
+
 Each parsed file also collects reference names from the AST while
 skipping each definition's own name and the contents of comments and strings.
 From the parse results, three analyses run:
@@ -321,6 +325,8 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 5. On a mismatched diff or test failure, attempts to restore the backup and returns `rolled_back: true`. This flag records the rollback path, not independent verification that restoration succeeded; filesystem failures can prevent recovery.
 
 `git_commit` stages the listed files and commits the Git index via GitPython.
+It returns an error when the staged index has no changes to commit; a refused
+empty commit does not consume the session budget.
 **Previously staged changes are also included**, so review the index first;
 `files_committed` echoes the requested file list, not the full commit contents.
 The tool reads `session_budget` and `confirm_every` from `reforge.toml`: commits

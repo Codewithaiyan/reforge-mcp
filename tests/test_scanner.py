@@ -1,7 +1,8 @@
 """Tests for the reforge scanner modules."""
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def create_fake_repo(tmp_path):
@@ -128,3 +129,33 @@ def test_non_source_files_are_not_counted_as_unscanned(tmp_path: Path) -> None:
     (tmp_path / "data.json").write_text("{}\n")
 
     assert scan_repo(str(tmp_path))["summary"]["unscanned_source_files"] == 0
+
+
+@pytest.mark.parametrize("kind", ["missing", "file"])
+def test_invalid_scan_root_returns_error(tmp_path: Path, kind: str) -> None:
+    from reforge_mcp.tools.scan import scan_repo
+
+    root = tmp_path / "invalid-root"
+    if kind == "file":
+        root.write_text("def main():\n    pass\n", encoding="utf-8")
+
+    result = scan_repo(str(root))
+
+    expected = "does not exist" if kind == "missing" else "is not a directory"
+    assert result["error"] == f"Repository path {expected}: '{root}'"
+    assert result["summary"]["total_files"] == 0
+    assert result["dead_code"] == []
+    assert "subprojects" not in result
+
+
+@pytest.mark.parametrize("has_source", [False, True])
+def test_existing_non_git_directory_can_be_scanned(tmp_path: Path, has_source: bool) -> None:
+    from reforge_mcp.tools.scan import scan_repo
+
+    if has_source:
+        (tmp_path / "main.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+
+    result = scan_repo(str(tmp_path))
+
+    assert "error" not in result
+    assert result["summary"]["total_files"] == int(has_source)

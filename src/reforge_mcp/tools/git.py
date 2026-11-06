@@ -1,6 +1,5 @@
 """Git Operations Tool."""
 
-import os
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -142,6 +141,8 @@ def git_commit(
     # Commit
     auto_message = message or f"refactor: automated fix #{fix_count + 1}"
     try:
+        if not repo.is_dirty(index=True, working_tree=False, untracked_files=False):
+            return _err("Nothing to commit: staged files match HEAD.")
         commit = repo.index.commit(auto_message)
     except Exception as e:
         return _err(f"Failed to commit: {e}")

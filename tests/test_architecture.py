@@ -1,7 +1,5 @@
 """Tests for architecture inference."""
-import json
 import tempfile
-from pathlib import Path
 
 from reforge_mcp.scanner.architecture import infer_architecture
 from reforge_mcp.utils.state import load_state, save_state

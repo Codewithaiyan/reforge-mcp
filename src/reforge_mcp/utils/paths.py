@@ -21,8 +21,7 @@ def looks_like_test_path(path: str) -> bool:
     parts = path.replace(os.sep, "/").split("/")
     name = parts[-1].lower()
     if (
-        name.startswith("test_")
-        or name.startswith("test.")
+        name.startswith(("test_", "test."))
         or "_test." in name
         or ".test." in name
         or ".spec." in name

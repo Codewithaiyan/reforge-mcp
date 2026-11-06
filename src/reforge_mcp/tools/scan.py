@@ -25,17 +25,34 @@ Unlike regex-based scanning, AST parsing understands code structure:
 import logging
 import os
 import tomllib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..scanner.dead_code import find_dead_code
 from ..scanner.duplicates import find_duplicates
-from ..scanner.parser import parse_directory, parse_file
+from ..scanner.parser import parse_directory
 from ..utils.paths import looks_like_test_path
 from ..utils.security import SecurityError, validate_path
 
 logger = logging.getLogger(__name__)
+
+
+def _scan_error(message: str) -> dict[str, Any]:
+    """Keep failed scans compatible with the existing error-report schema."""
+    return {
+        "summary": {
+            "total_files": 0,
+            "total_functions": 0,
+            "total_lines": 0,
+            "languages_detected": [],
+        },
+        "dead_code": [],
+        "duplicates": [],
+        "god_files": [],
+        "dep_graph": {"nodes": [], "edges": [], "circular": []},
+        "error": message,
+    }
 
 
 def scan_repo(
@@ -76,28 +93,19 @@ def scan_repo(
     - include_tests allows skipping test analysis for speed
     - max_depth prevents path traversal attacks and infinite loops
     """
-    # SECURITY: Validate root_path is within a safe boundary
-    # For scan_repo, we validate the path exists and is absolute
-    # The repo_root for validation is the path itself (we're scanning that repo)
+    # Validate the path before checking the scan root; path validation alone
+    # permits missing paths and files, which must not look like clean scans.
     try:
         validate_path(root_path, root_path)
     except SecurityError as e:
         logger.error(f"Security validation failed: {e}")
-        return {
-            "summary": {
-                "total_files": 0,
-                "total_functions": 0,
-                "total_lines": 0,
-                "languages_detected": [],
-            },
-            "dead_code": [],
-            "duplicates": [],
-            "god_files": [],
-            "dep_graph": {"nodes": [], "edges": [], "circular": []},
-            "error": f"Security validation failed: {e}",
-        }
+        return _scan_error(f"Security validation failed: {e}")
 
     root = Path(root_path)
+    if not root.exists():
+        return _scan_error(f"Repository path does not exist: '{root_path}'")
+    if not root.is_dir():
+        return _scan_error(f"Repository path is not a directory: '{root_path}'")
 
     # Load ignore list from reforge.toml if present
     ignore_dirs = _load_ignore_dirs(root)
@@ -643,7 +651,12 @@ def _tracked_files(root: Path) -> set[str] | None:
     everything, so the tool still works outside git.
     """
     try:
-        from git import GitCommandError, InvalidGitRepositoryError, NoSuchPathError, Repo
+        from git import (
+            GitCommandError,
+            InvalidGitRepositoryError,
+            NoSuchPathError,
+            Repo,
+        )
 
         repo = Repo(root, search_parent_directories=False)
         out = repo.git.ls_files()
@@ -883,7 +896,7 @@ def get_health_score(
     coverage = round(scanned / max(considered, 1), 3)
 
     entry: dict[str, Any] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "score": score,
         "dead_code_ratio": round(dead_code_ratio, 3),
         "duplicate_ratio": round(duplicate_ratio, 3),

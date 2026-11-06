@@ -186,7 +186,9 @@ def test_edge_cases_over_stdio(project):
         missing = str(project / "nonexistent")
         async with server(project) as (call, _called, session):
             scan = await call("scan_repo", root_path=missing)
-            assert scan["summary"]["total_files"] == 0
+            assert scan["error"] == f"Repository path does not exist: '{missing}'"
+            file_scan = await call("scan_repo", root_path=str(source))
+            assert file_scan["error"] == f"Repository path is not a directory: '{source}'"
             chunk = await call(
                 "get_chunk",
                 file_path=str(source),
@@ -270,14 +272,30 @@ def test_edge_cases_over_stdio(project):
             assert no_branch["error"].startswith("Cannot checkout branch ")
             repo = git.Repo(project)
             before = repo.head.commit
-            # GitPython permits an empty commit; changing that would change runtime behavior.
             empty = await call("git_commit", repo_path=root, files=["src/Calc.py"])
-            assert empty["success"] is True
-            assert repo.head.commit.tree.hexsha == before.tree.hexsha
+            assert empty["success"] is False
+            assert empty["error"] == "Nothing to commit: staged files match HEAD."
+            assert repo.head.commit.hexsha == before.hexsha
+            fixed = await call(
+                "write_fix", file_path=str(source), repo_root=root, diff_str=GOOD_DIFF
+            )
+            assert fixed["success"] is True
+            committed = await call("git_commit", repo_path=root, files=["src/Calc.py"])
+            assert committed["success"] is True
             assert repo.head.commit.parents[0].hexsha == before.hexsha
             checkpoint = await call("git_commit", repo_path=root, files=["src/Calc.py"])
             assert checkpoint["needs_confirmation"] is True
             assert checkpoint["error"] is None
+            still_empty = await call(
+                "git_commit", repo_path=root, files=["src/Calc.py"], confirmed=True
+            )
+            assert still_empty["success"] is False
+            assert still_empty["error"] == "Nothing to commit: staged files match HEAD."
+            second_fix = await call(
+                "write_fix", file_path=str(source), repo_root=root,
+                diff_str="@@ -6 +6 @@\n-    return 7\n+    return 8\n",
+            )
+            assert second_fix["success"] is True
             confirmed = await call(
                 "git_commit", repo_path=root, files=["src/Calc.py"], confirmed=True
             )

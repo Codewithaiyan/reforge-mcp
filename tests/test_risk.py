@@ -1,6 +1,6 @@
 """Tests for the risk scorer."""
 import os
-import pytest
+
 from reforge_mcp.scanner.risk import score_risk
 
 

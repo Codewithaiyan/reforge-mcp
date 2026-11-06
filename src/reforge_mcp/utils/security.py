@@ -12,7 +12,6 @@ what was blocked and why - this is a learning project, so the "why" matters.
 
 import shlex
 from pathlib import Path
-from typing import Any
 
 
 class SecurityError(Exception):
@@ -25,7 +24,6 @@ class SecurityError(Exception):
     - Provides a clear signal that something potentially malicious was attempted
     """
 
-    pass
 
 
 def validate_path(path: str, repo_root: str) -> Path:

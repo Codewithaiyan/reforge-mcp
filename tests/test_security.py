@@ -11,7 +11,6 @@ These tests verify that the security utilities correctly:
 Each test includes comments explaining what security property is being verified.
 """
 
-import os
 import tempfile
 from pathlib import Path
 

@@ -73,9 +73,10 @@ def infer_architecture(repo_root: str, scan_result: dict) -> dict:
 def _find_entry_points(files: list[str], basenames: list[str], stems: list[str]) -> list[str]:
     candidates = []
     for f, b, s in zip(files, basenames, stems):
-        if s in ("main", "__main__", "app", "server", "index", "cli", "run", "manage"):
-            candidates.append(f)
-        elif b in ("main.py", "__main__.py", "app.py", "server.py", "index.js", "index.ts"):
+        if (
+            s in ("main", "__main__", "app", "server", "index", "cli", "run", "manage")
+            or b in ("main.py", "__main__.py", "app.py", "server.py", "index.js", "index.ts")
+        ):
             candidates.append(f)
     seen: set[str] = set()
     result = []
