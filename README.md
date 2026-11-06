@@ -68,7 +68,7 @@ and a Python dependency graph that had been mostly missing for nine
 releases. Every one is reproduced and documented in
 [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
-CI runs the test suite on Linux and Windows with Python 3.11 and 3.14.
+CI runs lint and the test suite on Linux and Windows with Python 3.11, 3.12 and 3.14.
 
 What is still true, and worth knowing before you trust a number:
 
