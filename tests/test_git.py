@@ -33,6 +33,69 @@ def git_repo(tmp_path: Path):
 
 class TestGitCommit:
 
+    def test_unchanged_named_file_is_rejected_without_using_budget(self, git_repo: Path) -> None:
+        import git as _git
+
+        repo = _git.Repo(git_repo)
+        before = repo.head.commit.hexsha
+        key = str(git_repo.resolve())
+
+        result = git_commit(str(git_repo), files=["README.md"])
+
+        assert result["success"] is False
+        assert result["error"] == "Nothing to commit: staged files match HEAD."
+        assert result["commit_hash"] is None
+        assert repo.head.commit.hexsha == before
+        assert git_tool._fix_counts.get(key, 0) == 0
+
+    def test_modified_named_file_is_committed(self, git_repo: Path) -> None:
+        import git as _git
+
+        readme = git_repo / "README.md"
+        readme.write_bytes(b"updated\n")
+        result = git_commit(str(git_repo), files=["README.md"], message="docs: update readme")
+
+        assert result["success"] is True
+        assert _git.Repo(git_repo).head.commit.tree["README.md"].data_stream.read() == b"updated\n"
+
+    def test_previously_staged_change_is_still_committed(self, git_repo: Path) -> None:
+        import git as _git
+
+        repo = _git.Repo(git_repo)
+        (git_repo / "staged.py").write_text("x = 1\n", encoding="utf-8")
+        repo.index.add(["staged.py"])
+
+        result = git_commit(str(git_repo), files=["README.md"])
+
+        assert result["success"] is True
+        assert "staged.py" in repo.head.commit.tree
+
+    def test_initial_commit_is_allowed(self, tmp_path: Path) -> None:
+        import git as _git
+
+        repo = _git.Repo.init(tmp_path)
+        with repo.config_writer() as config:
+            config.set_value("user", "name", "Test User")
+            config.set_value("user", "email", "test@example.com")
+        (tmp_path / "first.py").write_text("x = 1\n", encoding="utf-8")
+
+        result = git_commit(str(tmp_path), files=["first.py"])
+
+        assert result["success"] is True
+        assert not repo.head.commit.parents
+
+    def test_confirmation_still_precedes_empty_commit_guard(self, git_repo: Path) -> None:
+        key = str(git_repo.resolve())
+        git_tool._fix_counts[key] = 5
+
+        checkpoint = git_commit(str(git_repo), files=["README.md"])
+        assert checkpoint["needs_confirmation"] is True
+
+        refused = git_commit(str(git_repo), files=["README.md"], confirmed=True)
+        assert refused["success"] is False
+        assert refused["error"] == "Nothing to commit: staged files match HEAD."
+        assert git_tool._fix_counts[key] == 5
+
     def test_valid_commit_succeeds(self, git_repo: Path) -> None:
         f = git_repo / "code.py"
         f.write_text("x = 1\n")

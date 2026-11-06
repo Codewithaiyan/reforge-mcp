@@ -326,6 +326,8 @@ def git_commit_tool(
     additionally returns needs_confirmation=true and message; retry with
     confirmed=true after approval. files_committed echoes the requested list,
     not an inventory of the commit: previously staged changes are also committed.
+    Refuses an empty commit when the staged index matches HEAD; refusals do not
+    consume the session budget. Initial commits with staged content are allowed.
     May create/check out a branch and invoke Git hooks; does not push.
     """
     return git_commit(repo_path, files, message, branch, create_branch, confirmed)

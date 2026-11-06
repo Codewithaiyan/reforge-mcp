@@ -325,6 +325,8 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 5. On a mismatched diff or test failure, attempts to restore the backup and returns `rolled_back: true`. This flag records the rollback path, not independent verification that restoration succeeded; filesystem failures can prevent recovery.
 
 `git_commit` stages the listed files and commits the Git index via GitPython.
+It returns an error when the staged index has no changes to commit; a refused
+empty commit does not consume the session budget.
 **Previously staged changes are also included**, so review the index first;
 `files_committed` echoes the requested file list, not the full commit contents.
 The tool reads `session_budget` and `confirm_every` from `reforge.toml`: commits
