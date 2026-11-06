@@ -31,11 +31,14 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from tree_sitter import Language, Parser, Query, QueryCursor
 
 from ..utils.security import should_skip_file
+
+if TYPE_CHECKING:
+    from tree_sitter import Node
 
 logger = logging.getLogger(__name__)
 
