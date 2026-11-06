@@ -9,6 +9,14 @@
 > **Also available as an agent skill on [Agensi](https://www.agensi.io/skills/reforge).** The skill teaches your agent the full reforge workflow (scan → score → plan → fix → commit). Install reforge-mcp first, then add the skill.
 
 
+#
+[![reforge-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp/badges/score.svg)](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp)
+
+[![reforge-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp/badges/card.svg)](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp)
+
+
+
+
 # reforge-mcp
 
 An MCP server that gives Claude Code structured tools over your codebase — dead code, duplicates, god files, the dependency graph — and tells you what it could not read.
