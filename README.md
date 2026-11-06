@@ -83,6 +83,12 @@ What is still true, and worth knowing before you trust a number:
 
 **Prerequisites:** Python 3.11+, Claude Code CLI, Git
 
+**API keys:** Reforge does not require `ANTHROPIC_API_KEY` or another model API
+key. Its analysis and state tools run locally without calling an external
+model; Claude Code or Claude Desktop manages its own model access. Test commands
+launched by `write_fix` and Git hooks invoked by `git_commit` may have their own
+network activity.
+
 ### From PyPI (recommended)
 
 ```bash
@@ -304,7 +310,7 @@ Claude Code receives the structured scan report and uses `get_chunk` to read spe
 | Atomic state writes | `reforge-state.json` is always written via `.tmp` → `rename` — a crash mid-write leaves an orphaned `.tmp`, not a corrupt file; `startup_tasks()` cleans these on boot |
 | Mismatched diffs | `apply_diff` rebuilds each hunk's expected old lines from its context and `-` lines and compares them against the file before mutating anything — a stale or wrong diff is rejected whole, leaving the file byte-identical |
 | Runaway test commands | The test command runs with no shell, with `stdin` closed and its output going to a file rather than a pipe. A prompt it cannot answer, or a grandchild process holding a pipe open, used to hang the server past its own timeout |
-| No network calls | The server makes zero outbound network requests; all analysis is local |
+| Local analysis | Reforge's analysis and state tools make no outbound API calls. The AI client's model requests, user-supplied test commands and Git hooks have their own network behavior |
 
 ---
 
