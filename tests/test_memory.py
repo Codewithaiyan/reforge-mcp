@@ -1,10 +1,8 @@
 """Tests for state persistence, crash recovery, health score, and gitignore setup."""
 
-import json
 from pathlib import Path
 
-import pytest
-
+from reforge_mcp.tools.scan import get_health_score
 from reforge_mcp.utils.state import (
     cleanup_tmp_files,
     ensure_gitignore,
@@ -12,7 +10,6 @@ from reforge_mcp.utils.state import (
     load_state,
     save_state,
 )
-from reforge_mcp.tools.scan import get_health_score
 
 
 class TestMemory:

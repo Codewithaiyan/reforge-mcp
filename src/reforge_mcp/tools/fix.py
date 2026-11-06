@@ -173,6 +173,7 @@ def write_fix(
             try:
                 proc = subprocess.run(
                     [executable, *argv[1:]],
+                    check=False,
                     stdin=subprocess.DEVNULL,
                     stdout=out,
                     stderr=subprocess.STDOUT,

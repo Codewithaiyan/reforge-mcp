@@ -1,9 +1,8 @@
 """Persistent state management for reforge-mcp."""
 
 import json
-import os
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +53,7 @@ def save_state(repo_path: str, state: dict[str, Any]) -> None:
 
 
 def _rotate_backup(dest: Path) -> None:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     bak = dest.parent / f"{dest.name}.bak.{ts}"
     try:
         shutil.copy2(str(dest), str(bak))
@@ -184,4 +183,4 @@ def startup_tasks(repo_path: str) -> dict[str, Any]:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

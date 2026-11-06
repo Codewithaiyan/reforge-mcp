@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from reforge_mcp.tools.scan import scan_repo
 
 

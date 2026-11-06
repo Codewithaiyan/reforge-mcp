@@ -25,13 +25,13 @@ Unlike regex-based scanning, AST parsing understands code structure:
 import logging
 import os
 import tomllib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..scanner.dead_code import find_dead_code
 from ..scanner.duplicates import find_duplicates
-from ..scanner.parser import parse_directory, parse_file
+from ..scanner.parser import parse_directory
 from ..utils.paths import looks_like_test_path
 from ..utils.security import SecurityError, validate_path
 
@@ -651,7 +651,12 @@ def _tracked_files(root: Path) -> set[str] | None:
     everything, so the tool still works outside git.
     """
     try:
-        from git import GitCommandError, InvalidGitRepositoryError, NoSuchPathError, Repo
+        from git import (
+            GitCommandError,
+            InvalidGitRepositoryError,
+            NoSuchPathError,
+            Repo,
+        )
 
         repo = Repo(root, search_parent_directories=False)
         out = repo.git.ls_files()
@@ -891,7 +896,7 @@ def get_health_score(
     coverage = round(scanned / max(considered, 1), 3)
 
     entry: dict[str, Any] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "score": score,
         "dead_code_ratio": round(dead_code_ratio, 3),
         "duplicate_ratio": round(duplicate_ratio, 3),

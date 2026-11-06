@@ -176,7 +176,7 @@ def _run_captures(query: Query, root: "Node") -> list[tuple["Node", str]]:
     rest of the code expects.
     """
     raw: dict = QueryCursor(query).captures(root)
-    pairs: list[tuple["Node", str]] = []
+    pairs: list[tuple[Node, str]] = []
     for name, nodes in raw.items():
         for node in nodes:
             pairs.append((node, name))
@@ -1466,7 +1466,7 @@ def parse_file(
     # Read and parse file
     try:
         source = file_path.read_bytes()
-    except (OSError, IOError) as e:
+    except OSError as e:
         logger.warning(f"Failed to read file {file_path}: {e}")
         return ParseResult(
             file=rel_path,

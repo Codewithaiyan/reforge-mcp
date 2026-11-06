@@ -1,7 +1,8 @@
 """Tests for the reforge scanner modules."""
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def create_fake_repo(tmp_path):
