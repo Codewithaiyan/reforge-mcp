@@ -10,6 +10,8 @@
 
 
 #
+Available on Glama - https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp
+
 [![reforge-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp/badges/score.svg)](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp)
 
 [![reforge-mcp MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp/badges/card.svg)](https://glama.ai/mcp/servers/Codewithaiyan/reforge-mcp)
