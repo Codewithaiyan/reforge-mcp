@@ -75,3 +75,6 @@ graphify-out/
 
 # packaged skill zips for marketplace upload
 dist/
+
+# local Glama audit reports
+docs/GLAMA_*
