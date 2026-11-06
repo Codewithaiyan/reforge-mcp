@@ -38,6 +38,23 @@ from ..utils.security import SecurityError, validate_path
 logger = logging.getLogger(__name__)
 
 
+def _scan_error(message: str) -> dict[str, Any]:
+    """Keep failed scans compatible with the existing error-report schema."""
+    return {
+        "summary": {
+            "total_files": 0,
+            "total_functions": 0,
+            "total_lines": 0,
+            "languages_detected": [],
+        },
+        "dead_code": [],
+        "duplicates": [],
+        "god_files": [],
+        "dep_graph": {"nodes": [], "edges": [], "circular": []},
+        "error": message,
+    }
+
+
 def scan_repo(
     root_path: str,
     languages: list[str] | None = None,
@@ -76,28 +93,19 @@ def scan_repo(
     - include_tests allows skipping test analysis for speed
     - max_depth prevents path traversal attacks and infinite loops
     """
-    # SECURITY: Validate root_path is within a safe boundary
-    # For scan_repo, we validate the path exists and is absolute
-    # The repo_root for validation is the path itself (we're scanning that repo)
+    # Validate the path before checking the scan root; path validation alone
+    # permits missing paths and files, which must not look like clean scans.
     try:
         validate_path(root_path, root_path)
     except SecurityError as e:
         logger.error(f"Security validation failed: {e}")
-        return {
-            "summary": {
-                "total_files": 0,
-                "total_functions": 0,
-                "total_lines": 0,
-                "languages_detected": [],
-            },
-            "dead_code": [],
-            "duplicates": [],
-            "god_files": [],
-            "dep_graph": {"nodes": [], "edges": [], "circular": []},
-            "error": f"Security validation failed: {e}",
-        }
+        return _scan_error(f"Security validation failed: {e}")
 
     root = Path(root_path)
+    if not root.exists():
+        return _scan_error(f"Repository path does not exist: '{root_path}'")
+    if not root.is_dir():
+        return _scan_error(f"Repository path is not a directory: '{root_path}'")
 
     # Load ignore list from reforge.toml if present
     ignore_dirs = _load_ignore_dirs(root)

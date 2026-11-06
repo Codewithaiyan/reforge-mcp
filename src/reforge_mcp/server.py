@@ -58,7 +58,7 @@ def scan_repo_tool(
         str,
         Field(
             description=(
-                "Repository directory to scan; prefer an absolute path, e.g. /work/app. "
+                "Existing source directory to scan; prefer an absolute path, e.g. /work/app. "
                 "Relative paths resolve from the server working directory."
             )
         ),
@@ -91,7 +91,8 @@ def scan_repo_tool(
     Summary includes file/symbol/line counts, languages, parse_failures and
     unscanned-source counts. Findings carry file paths and 1-indexed lines;
     dep_graph has nodes, {from, to} edges, circular paths, external_imports,
-    unresolved_relative_imports and package_imports counts. A validation failure
+    unresolved_relative_imports and package_imports counts. A missing/non-directory
+    root or a path-validation failure
     returns error, empty findings/graph and a zero summary, without subprojects.
     Lists are capped at 200 items, duplicate groups at 50 and their locations
     at 10; shortened lists gain <key>_total, with truncated listing shortened

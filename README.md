@@ -296,6 +296,10 @@ outside Git or with an empty index, all eligible files are analysed. `languages`
 can filter supported languages. `include_tests` is currently accepted but does
 not filter test files, whether true or false.
 
+A missing root or a root that is a file returns an explicit `error` report.
+Existing directories without Git are still supported, including empty directories
+and extracted source archives.
+
 Each parsed file also collects reference names from the AST while
 skipping each definition's own name and the contents of comments and strings.
 From the parse results, three analyses run:

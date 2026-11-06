@@ -186,7 +186,9 @@ def test_edge_cases_over_stdio(project):
         missing = str(project / "nonexistent")
         async with server(project) as (call, _called, session):
             scan = await call("scan_repo", root_path=missing)
-            assert scan["summary"]["total_files"] == 0
+            assert scan["error"] == f"Repository path does not exist: '{missing}'"
+            file_scan = await call("scan_repo", root_path=str(source))
+            assert file_scan["error"] == f"Repository path is not a directory: '{source}'"
             chunk = await call(
                 "get_chunk",
                 file_path=str(source),
