@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.4 - 2026-11-06
+
+### Changed
+
+- Document all ten MCP tools with selection guidance, parameter descriptions,
+  return shapes, TypedDict output schemas and safety/idempotency annotations.
+  `infer_architecture` is marked as writing files because it saves its hypothesis.
+  State writers are non-idempotent because of history entries, backup rotation
+  or report timestamps. Tool names, input names/types/defaults and implementation
+  bodies are unchanged; no framework or runtime dependency was upgraded.
+- Verify that the server does not use the Anthropic SDK, HTTP clients or
+  `ANTHROPIC_API_KEY`. The obsolete API key requirement was already removed;
+  clarify that client model access, test commands and Git hooks have their own
+  network behavior. Historical notes about the removed requirement are retained.
+- Align the README's ten registered tool names and file effects with the code;
+  separate Claude Code and Claude Desktop installation, use the executable name
+  in Desktop configuration, and use the canonical contributing clone URL.
+  Document the existing test-filter limitation, state replacement gap, recovery
+  backup names, staged-index commit behavior and subproject detection limits.
+
+### Verification
+
+- Add tool metadata and output-contract tests, including a real MCP stdio
+  client/server handshake and success, failure, null-score and checkpoint results.
+- Resolve pre-existing undefined `Node` type references with a type-checking-only
+  import so the source-wide fatal lint check passes without changing parsing.
+
 ## 0.4.3 - 2026-11-01
 
 ### Fixed
