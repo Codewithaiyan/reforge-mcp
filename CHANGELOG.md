@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.5 - 2026-11-06
+
+### Fixed
+
+- `scan_repo` now returns a clear error for a nonexistent path or a path that
+  is not a directory, instead of returning an empty report that could look like
+  a clean repository. The existing error-report schema is reused. Existing
+  directories without Git, including empty folders and source archives, remain
+  valid scan inputs.
+- `git_commit` refuses to create an empty commit when the staged index matches
+  HEAD. Rejected attempts do not advance HEAD or consume the session budget.
+  Initial commits with staged content and normal commits remain supported;
+  existing budget and confirmation checks retain their order and behavior.
+
+### Changed
+
+- CI now tests Python 3.12 alongside 3.11 and 3.14 on Linux and Windows, and
+  installs Ruff to run `ruff check src tests`. `Publish.yml` is unchanged.
+- Apply mechanical lint fixes and target Python 3.11 explicitly. Narrow
+  `BLE001` exceptions preserve broad exception handling at parser-adapter and
+  GitPython tool boundaries; no blanket ignores or rule groups are disabled.
+
+### Verification
+
+- Add unit tests and update real MCP stdio tests for invalid scan roots,
+  non-Git directories, empty-commit refusal, normal/initial commits and unchanged
+  session budgets and confirmation checkpoints.
+
 ## 0.4.4 - 2026-11-06
 
 ### Changed
